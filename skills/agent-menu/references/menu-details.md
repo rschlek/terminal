@@ -56,11 +56,13 @@ Flat on purpose, so both scripts read it line by line with no YAML library:
   empty, the placeholder and the spaces before it are dropped.
 - `projects_root` is a path: surrounding quotes are removed and a leading `~`
   expands to the home folder.
-- Block keys: `new` (default `<name> {args}`), `resume`, and `resume_all`
-  (falls back to `resume`). Any block name works as an agent name.
+- Block keys: `new` (default `<name> {args}`), `resume`, `resume_all`
+  (falls back to `resume`), and the optional `new_project` (no default; see
+  the project view). Any block name works as an agent name.
 
 The new-warp-chat launcher reads the same file: a block's `new` line (or
-`resume` line for a resume) is how a new tab of that CLI is launched.
+`resume` line for a resume) is how a new tab of that CLI is launched. It
+ignores `new_project`.
 
 ## The menu
 
@@ -75,15 +77,26 @@ The tab config runs the menu with one argument, the agent's block name.
   (trailing `# comments`, quotes, and folded `>` / literal `|` values are
   handled). Type to filter by name, Up/Down, Enter starts `new` there, Tab
   toggles to `resume` there, Esc goes back.
+- When the agent's block has a `new_project` line, the project view starts
+  with a pinned `+ new project` row, in new mode only. The filter never hides
+  it; it is selected first only when there are no project folders yet, and the
+  view then opens even with an empty `projects_root`. Enter on it runs the
+  `new_project` line in `projects_root` itself and records nothing in
+  `recent.tsv`. Without the key the view is unchanged. Setup never rewrites an
+  existing `agents.yaml`, so to turn the row on add the line to the agent's
+  block by hand (the template carries it commented out), for example
+  `new_project: claude {args} "Create a new project in this folder."`.
 - With no `projects_root`, or one that does not exist, the Project entry says
   so and names the key to set; the other entries still work.
 - The launch changes the tab's own shell to the folder, then runs the line, so
   when the agent exits the user is at a prompt in that folder.
 
 Non-interactive modes, for checking a config edit:
-`agent-menu.ps1 <agent> -Print new|resume|resume_all`, `agent-menu.ps1 -List`,
-`agent-menu.ps1 <agent> -NoLaunch` (runs the menu, prints instead of
-launching); `agent-menu.sh --print <agent> <mode>`, `agent-menu.sh --list`.
+`agent-menu.ps1 <agent> -Print new|resume|resume_all|new_project`,
+`agent-menu.ps1 [<agent>] -List` (with an agent whose block has `new_project`,
+the pinned row comes first), `agent-menu.ps1 <agent> -NoLaunch` (runs the menu,
+prints instead of launching); `agent-menu.sh --print <agent> <mode>`,
+`agent-menu.sh --list [<agent>]`.
 
 ## Tab configs
 
