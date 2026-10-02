@@ -39,10 +39,13 @@ keeps a copy. Fix a skill here, never in a consumer.
 Everything here is public and generic. Write for "the user". No person,
 username, host name, employer, team, or internal product; no absolute paths
 from any machine; no names of skills or plugins from other catalogs; no real
-tokens. The one exception is this repository's own URL. Anything specific to
-one environment (how WezTerm or Warp is installed there, which launch flags
-its CLIs use) belongs to that environment's own setup or to the user's own
-Warp tab configs, never to these skills.
+tokens. The one exception is this repository's own URL. Setting up the
+terminals themselves belongs here too: `warp-setup` and `wezterm-setup` ship
+generic defaults (the plugin's default Warp look, a minimal WezTerm block) that
+any user can apply and change. What stays out is anything specific to one
+environment or person - a machine's paths, which launch flags or model pins
+its CLIs use - which lives in that environment's own setup or in the user's own
+config files (the agent menu's `agents.yaml`, Warp's settings).
 
 ### Layout
 
@@ -61,6 +64,9 @@ Warp tab configs, never to these skills.
   runs, plus `setup.ps1` / `setup.sh`. `agent-config.ps1` is the one reader of
   the per-user `agents.yaml`; the Windows launcher dot-sources it too.
   `templates/` holds the shipped config and tab config templates.
+- `skills/warp-setup/assets/`: the Warp settings it merges (`settings.toml`
+  plus the Windows and Linux overlays). `skills/wezterm-setup/assets/wezterm.lua`:
+  the WezTerm managed block. Both skills are prose plus assets, no scripts.
 
 ### Two harnesses, no hooks
 

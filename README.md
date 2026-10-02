@@ -1,8 +1,10 @@
 # Terminal
 
 Terminal skills for Claude Code and Codex: one WezTerm window the user and the
-agent share for passwords, MFA, and interactive logins, and fresh, optionally
-seeded chats opened in new tabs of the running Warp terminal.
+agent share for passwords, MFA, and interactive logins; fresh, optionally
+seeded chats opened in new tabs of the running Warp terminal; a per-agent Warp
+tab menu; and the setup skills that put Warp and WezTerm in shape for all of
+it.
 
 ## Skills
 
@@ -11,6 +13,8 @@ seeded chats opened in new tabs of the running Warp terminal.
 | `shared-pane` | Opens one WezTerm window the user and the agent both drive: the user types the secret or approves the MFA push, the agent keeps working in the same authenticated shell. | WezTerm installed (set `WEZTERM_BIN` if it is not on PATH); a desktop session. |
 | `new-warp-chat` | Opens a new tab in the running Warp terminal that runs a given command, optionally with a seed prompt as its final argument. | Warp installed and running. |
 | `breakout` | Opens a fresh chat of the same CLI (Claude Code or Codex) in a new Warp tab, optionally seeded, through `new-warp-chat`. | Warp installed and running. |
+| `warp-setup` | Applies the plugin's default Warp look (theme, font sizes, zoom, vertical tabs, Warp AI and Warp Drive off) by merging it into `settings.toml`, sets up the agent tabs through `agent-menu`, and makes the `claude` tab the default new tab; on Windows it also turns off Warp's own Git prompt probes. The look is a default the user can change. | Warp installed and onboarded. |
+| `wezterm-setup` | Installs WezTerm if needed, reconciles a minimal managed block into the user's WezTerm config, and verifies `shared-pane` can drive a WezTerm window. | A desktop session; admin rights for the native package (Linux has a no-admin route). |
 | `agent-menu` | Sets up one standing Warp tab per agent CLI that opens a menu: a fresh session in the home folder, a fresh or resumed session in a project, or the agent's resume list. Each agent's launch lines live in one per-user config file. | Warp installed; on Windows, an execution policy that allows local scripts. |
 
 ## Launch flags

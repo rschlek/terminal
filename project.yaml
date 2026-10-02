@@ -1,6 +1,6 @@
 project: terminal
 title: Terminal
-summary: "Terminal skills for Claude Code and Codex: a WezTerm window the user and the agent share for interactive logins, and seeded new chats in Warp tabs, for anyone whose agent runs in those terminals."
+summary: "Terminal skills for Claude Code and Codex: a WezTerm window the user and the agent share for interactive logins, seeded new chats and a per-agent menu in Warp tabs, and the setup for both terminals, for anyone whose agent runs in them."
 scope: personal
 visibility: public
 tracking:

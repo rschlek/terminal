@@ -1,0 +1,6 @@
+# Windows-only Warp settings overlay managed by the warp-setup skill.
+# Shell (PS1) bypasses Warp's native Git prompt polling. On Windows that polling can
+# repeatedly spawn PowerShell + Git probes and amplify endpoint-security scanning.
+[terminal.input]
+input_box_type_setting = "classic"
+honor_ps1 = true
