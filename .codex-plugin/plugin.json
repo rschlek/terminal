@@ -1,7 +1,7 @@
 {
   "name": "terminal",
-  "version": "1.0.0",
-  "description": "Terminal skills for a coding agent: shared-pane (one WezTerm window the user and the agent both drive, for passwords, MFA and interactive logins), new-warp-chat (open a seeded tab in the running Warp terminal), and breakout (open a fresh chat of the same CLI in a new Warp tab).",
+  "version": "1.1.0",
+  "description": "Terminal skills for a coding agent: shared-pane (one WezTerm window the user and the agent both drive, for passwords, MFA and interactive logins), new-warp-chat (open a seeded tab in the running Warp terminal), breakout (open a fresh chat of the same CLI in a new Warp tab), and agent-menu (standing Warp tabs that open a home / project / resume menu per agent CLI).",
   "author": {
     "name": "The terminal plugin maintainers"
   },
@@ -11,7 +11,7 @@
   "interface": {
     "displayName": "Terminal",
     "shortDescription": "Share a WezTerm window for logins, and open seeded chats in new Warp tabs.",
-    "longDescription": "Skills for working across terminal windows: shared-pane opens one WezTerm window where the user types a password or approves MFA and the agent keeps driving the same authenticated shell; new-warp-chat opens a new tab in the running Warp terminal that runs a command with an optional seed prompt; breakout uses it to open a fresh chat of the same CLI, launched with the flags from the user's own Warp tab configs.",
+    "longDescription": "Skills for working across terminal windows: shared-pane opens one WezTerm window where the user types a password or approves MFA and the agent keeps driving the same authenticated shell; new-warp-chat opens a new tab in the running Warp terminal that runs a command with an optional seed prompt; breakout uses it to open a fresh chat of the same CLI, launched with the flags from the user's own config; agent-menu sets up one standing Warp tab per agent CLI that opens a menu for a fresh session at home, a session in a project, or the resume list, with launch flags kept in one per-user file.",
     "developerName": "The terminal plugin maintainers",
     "category": "Productivity",
     "capabilities": [

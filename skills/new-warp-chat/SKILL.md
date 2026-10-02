@@ -36,25 +36,29 @@ parser chokes on a BOM).
 | ----- | ------- |
 | tab name | Names the config file and the URI (`[A-Za-z0-9._-]+`). Use your skill's name so a stray failure is attributable. It may not equal a standing config's name (`claude`, `codex-resume`, ...) - the throwaway self-deletes. |
 | command | What the tab runs, e.g. `claude` or `codex`. |
-| args | **Inherited from the user's own Warp tab config by default** (below). Callers add to the set with extra args (`-C <dir>`, a session id) and replace it only when the user asks. |
+| args | **Inherited from the user's own config by default** (below). Callers add to the set with extra args (`-C <dir>`, a session id) and replace it only when the user asks. |
 | seed (optional) | Text appended as the command's **final single argument** - e.g. a CLI's initial prompt. Multi-line seeds are collapsed to one line. |
 
 Prepare any seed in a **file** (Write tool), never inline on a command line, so that
 quotes, `$` and backticks survive regardless of shell. The launcher deletes the seed
 file once it is baked in.
 
-## Launch args: one source of truth, the user's Warp tab config
+## Launch args: the user's own config
 
-Needs Warp running. The user's own standing Warp tab configs
-(`<tab_configs>/<cmd>.toml`, `<cmd>-resume.toml` for a resume), when they exist,
-are the single source of truth for how a CLI is launched on that machine, any
-machine- or tenant-specific pin included; this skill and its callers never
-hard-code those flags. Omit the args and the launcher inherits them, appends the
-caller's extras, and prints which args it used and which file they came from.
-Precedence: **explicit args** (replace the whole set; only when the user asks to
-drop or override a flag) > **inherited** > **documented default** - with no
-standing config it falls back to the defaults table, which adds no extra flags,
-and **says so**. Parse rule and table: [reference](references/launch-mechanics.md).
+Needs Warp running. How a CLI is launched on a machine, any machine- or
+tenant-specific pin included, is the user's to set; this skill and its callers
+never hard-code those flags. Omit the args and the launcher inherits them from
+the first source that has them, appends the caller's extras, and prints which
+args it used and which file they came from:
+
+1. the agent menu's config (`agents.yaml`, see the sibling `agent-menu` skill):
+   the `<cmd>` block's `new` line, or its `resume` line for a resume;
+2. the standing Warp tab config `<tab_configs>/<cmd>.toml` (`<cmd>-resume.toml`
+   for a resume), for a machine without the agent menu;
+3. the documented defaults table, which adds no extra flags - and it **says so**.
+
+**Explicit args** replace the whole set, only when the user asks to drop or
+override a flag. Parse rules and table: [reference](references/launch-mechanics.md).
 
 ## Windows - call the bundled helper (do not hand-assemble)
 
@@ -67,10 +71,12 @@ escapes: [reference](references/launch-mechanics.md).
 ## macOS / Linux - model-driven inline
 
 `"$(cat file)"` passes a seed verbatim in bash/zsh, so no helper is needed. Resolve
-the args by the same rule as the helper (the standing config's `commands` entry
-minus the leading command name, verbatim, plus any extra args; say which file they
-came from, and fall back to the reference's defaults table - saying so - only when
-that file is missing), then compose the tab command (no `$S` parts if no seed):
+the args by the same order as the helper: the agent menu's composed line if it has
+one (`bash ${CLAUDE_PLUGIN_ROOT}/skills/agent-menu/scripts/agent-menu.sh --print <cmd> new`,
+or `resume`), else the standing config's `commands` entry; either minus the leading
+command name, verbatim, plus any extra args. Say which file they came from, and fall
+back to the reference's defaults table - saying so - only when neither exists. Then
+compose the tab command (no `$S` parts if no seed):
 
 ```
 rm -f '<cfg>'; S="$(cat '<seed-file>')"; rm -f '<seed-file>'; <cmd> <args> "$S"
@@ -92,8 +98,7 @@ every OS the new tab inherits the current tab's working directory.
 ## For calling skills
 
 The contract: **you** compose the seed and pick the command; **this skill** gets it
-into a new tab intact, with the launch flags the user's standing Warp tab config
-already carries. Do not restate those flags in your own skill - add to them with
+into a new tab intact, with the launch flags the user's own config already carries. Do not restate those flags in your own skill - add to them with
 extra args, override them only on the user's say-so. Current consumer: the sibling
 `breakout` skill (fresh CLI chat). You cannot see the launched tab - report what you
 launched and let the user confirm it appeared. Run `tests/test-seed-quoting.ps1`

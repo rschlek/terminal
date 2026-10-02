@@ -5,6 +5,9 @@
   The second block covers launch-arg inheritance from the standing tab configs
   (inherit, inherit + -ExtraArgs, explicit override, -Resume, quoted-flag
   round-trip, missing-config fallback, WARP_TAB_CONFIGS_DIR, name collision).
+  The third covers the agent menu's config (agents.yaml) and the resolution
+  order explicit > agents.yaml > standing tab config > documented default,
+  including -Resume for claude and codex with no -resume.toml present.
 
 .DESCRIPTION
   For each edge-case seed, the harness runs the launcher with -NoLaunch, decodes
@@ -31,6 +34,11 @@ $launcher = Join-Path $PSScriptRoot "..\scripts\new-warp-chat.ps1"
 if ($WorkDir -match '\s') { throw "WorkDir must not contain spaces (keeps the probe invocation quote-free): $WorkDir" }
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 $cfgDir = Join-Path $WorkDir "tab_configs"
+# Never read the user's real agent menu config: point AGENT_MENU_DIR at a temp
+# folder that holds no agents.yaml until the third block writes one.
+$savedAgentMenuDir = $env:AGENT_MENU_DIR
+$agentMenuDir = Join-Path $WorkDir "agent-menu"
+$env:AGENT_MENU_DIR = $agentMenuDir
 
 # The probe stands in for the launched CLI: it records how many args it received
 # and each arg verbatim, one per line (seeds are single-line by the time they are
@@ -241,6 +249,88 @@ $threw = $false
 try { & $launcher -TabName "powershell" -LaunchCmd powershell -TabConfigsDir $cfgDir -NoLaunch | Out-Null } catch { $threw = $true }
 Report "tabname-collision-guard" ($threw -and (Test-Path $standing)) ""
 
+
+# ---------------------------------------------------------------------------
+# The agent menu's config: with -LaunchArgs omitted, the <cmd> block's `new`
+# line (`resume` under -Resume) in <AGENT_MENU_DIR>\agents.yaml wins over the
+# standing tab config; a missing block falls through to the standing config,
+# then to the documented defaults. Values are taken verbatim to end of line.
+# ---------------------------------------------------------------------------
+New-Item -ItemType Directory -Force -Path $agentMenuDir | Out-Null
+$agentsYaml = Join-Path $agentMenuDir "agents.yaml"
+function Write-AgentsYaml([string]$text) {
+    [System.IO.File]::WriteAllText($agentsYaml, $text, (New-Object System.Text.UTF8Encoding($false)))
+}
+function Get-TabCommand([hashtable]$launcherArgs) {
+    $msg = & $launcher -TabName "nwc-test" -TabConfigsDir $cfgDir -NoLaunch @launcherArgs
+    $cfg = Join-Path $cfgDir "nwc-test.toml"
+    $cmd = Decode-TomlCommand $cfg
+    Remove-Item -LiteralPath $cfg -ErrorAction SilentlyContinue
+    return @{ Msg = ($msg -join "`n"); Cmd = $cmd }
+}
+$quotedArgs = "--fixture-flag --model fixture-model --config 'effort=`"high`"'"
+
+# 9. agents.yaml beats the standing config (executed: the probe records argv).
+$i++; $outFile = Join-Path $WorkDir "out$i.txt"; $seedFile = Join-Path $WorkDir "seed$i.txt"
+[System.IO.File]::WriteAllText($seedFile, 'say "hi"', (New-Object System.Text.UTF8Encoding($false)))
+Write-StandingConfig "powershell" "powershell $probeBase $outFile --must-not-appear" | Out-Null
+Write-AgentsYaml "powershell:`n  args: --from-config 'two words'`n  new: powershell $probeBase $outFile {args}`n"
+$r = Run-Inherit @{ SeedFile = $seedFile } $outFile
+$ok = ($r.Lines[0] -eq "COUNT=3") -and ($r.Lines[1] -ceq '--from-config') -and ($r.Lines[2] -ceq 'two words') -and
+      ($r.Lines[3] -ceq 'say "hi"') -and ($r.Msg -like "*inherited from $agentsYaml ('powershell' block, 'new' line)*") -and $r.CfgGone
+Report "config-beats-standing" $ok ("argv: " + ($r.Lines -join ' | ') + "`n      msg: " + $r.Msg)
+
+# 10. -Resume uses the block's `resume` line, subcommand first, the session id
+#     appended after the flags (executed), with no powershell-resume.toml present.
+$i++; $outFile = Join-Path $WorkDir "out$i.txt"
+Remove-Item -LiteralPath (Join-Path $cfgDir "powershell-resume.toml") -ErrorAction SilentlyContinue
+Write-AgentsYaml "powershell:`n  args: --from-config`n  new: powershell {args}`n  resume: powershell $probeBase $outFile resume {args}`n"
+$r = Run-Inherit @{ Resume = $true; ExtraArgs = "sess-123" } $outFile
+$ok = ($r.Lines[0] -eq "COUNT=3") -and ($r.Lines[1] -ceq 'resume') -and ($r.Lines[2] -ceq '--from-config') -and
+      ($r.Lines[3] -ceq 'sess-123') -and ($r.Msg -like "*'resume' line*") -and $r.CfgGone
+Report "config-resume-executed" $ok ("argv: " + ($r.Lines -join ' | ') + "`n      msg: " + $r.Msg)
+
+# 11. The shipped shape for both agents, -resume.toml files absent: codex keeps
+#     `resume` before the flags, claude puts --resume after them; the quoted
+#     --config value round-trips verbatim. Static checks of the tab command.
+Write-AgentsYaml (@(
+    "projects_root: C:\fixture\root", "",
+    "claude:", "  args: --fixture-flag", "  new: claude {args}", "  resume: claude {args} --resume", "",
+    "codex:", "  args: $quotedArgs", "  new: codex {args}", "  resume: codex resume {args}", "  resume_all: codex resume --all {args}"
+) -join "`n")
+Remove-Item -LiteralPath (Join-Path $cfgDir "claude-resume.toml"), (Join-Path $cfgDir "codex-resume.toml") -ErrorAction SilentlyContinue
+$r = Get-TabCommand @{ LaunchCmd = "codex" }
+Report "config-codex-new-quoted" ($r.Cmd -clike "*; codex $quotedArgs") ("cmd: " + $r.Cmd)
+$r = Get-TabCommand @{ LaunchCmd = "codex"; Resume = $true; ExtraArgs = "sess-9" }
+Report "config-codex-resume" (($r.Cmd -clike "*; codex resume $quotedArgs sess-9") -and ($r.Msg -like "*'codex' block, 'resume' line*")) ("cmd: " + $r.Cmd)
+$r = Get-TabCommand @{ LaunchCmd = "claude" }
+Report "config-claude-new" ($r.Cmd -clike "*; claude --fixture-flag") ("cmd: " + $r.Cmd)
+$r = Get-TabCommand @{ LaunchCmd = "claude"; Resume = $true; ExtraArgs = "sess-8" }
+Report "config-claude-resume" ($r.Cmd -clike "*; claude --fixture-flag --resume sess-8") ("cmd: " + $r.Cmd)
+
+# 12. Explicit -LaunchArgs still wins over agents.yaml.
+$r = Get-TabCommand @{ LaunchCmd = "codex"; LaunchArgs = "--explicit" }
+Report "explicit-beats-config" (($r.Cmd -clike "*; codex --explicit") -and ($r.Msg -like "*nothing inherited*")) ("cmd: " + $r.Cmd)
+
+# 13. Empty args: {args} and the space before it disappear.
+Write-AgentsYaml "claude:`n  args:`n  new: claude {args}`n  resume: claude {args} --resume`n"
+$r = Get-TabCommand @{ LaunchCmd = "claude"; Resume = $true }
+Report "config-empty-args" ($r.Cmd -clike "*; claude --resume") ("cmd: " + $r.Cmd)
+
+# 14. No block for the command: fall through to the standing tab config.
+Write-StandingConfig "claude" "claude --from-standing" | Out-Null
+Write-AgentsYaml "codex:`n  new: codex {args}`n"
+$r = Get-TabCommand @{ LaunchCmd = "claude" }
+Report "config-no-block-falls-to-standing" (($r.Cmd -clike "*; claude --from-standing") -and ($r.Msg -like "*inherited from*claude.toml*")) ("cmd: " + $r.Cmd)
+Remove-Item -LiteralPath (Join-Path $cfgDir "claude.toml") -ErrorAction SilentlyContinue
+
+# 15. A block whose line runs another command is skipped (warning), then the
+#     documented default applies when no standing config exists either.
+Write-AgentsYaml "claude:`n  new: wrapper claude {args}`n"
+$r = Get-TabCommand @{ LaunchCmd = "claude"; WarningAction = "SilentlyContinue" }
+Report "config-wrong-command-skipped" (($r.Cmd -clike "*; claude") -and ($r.Msg -like "*documented default*")) ("cmd: " + $r.Cmd + "`n      msg: " + $r.Msg)
+
+if ($null -ne $savedAgentMenuDir) { $env:AGENT_MENU_DIR = $savedAgentMenuDir } else { Remove-Item Env:\AGENT_MENU_DIR -ErrorAction SilentlyContinue }
 Remove-Item -Recurse -Force $WorkDir -ErrorAction SilentlyContinue
 if ($failures -gt 0) { Write-Output "$failures FAILURE(S)"; exit 1 }
 Write-Output "All $total cases passed."

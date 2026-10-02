@@ -56,6 +56,11 @@ Warp tab configs, never to these skills.
   (Windows), the WezTerm helpers.
 - `skills/new-warp-chat/scripts/new-warp-chat.ps1`: the Windows launcher that
   `breakout` also calls; `tests/test-seed-quoting.ps1` is its regression test.
+- `skills/agent-menu/scripts/`: `agent-menu.ps1` + `agent-config.ps1`
+  (Windows) and `agent-menu.sh` (macOS, Linux), the menu a standing Warp tab
+  runs, plus `setup.ps1` / `setup.sh`. `agent-config.ps1` is the one reader of
+  the per-user `agents.yaml`; the Windows launcher dot-sources it too.
+  `templates/` holds the shipped config and tab config templates.
 
 ### Two harnesses, no hooks
 
@@ -69,11 +74,18 @@ bodies short and harness-neutral.
   `powershell -NoProfile -File skills/new-warp-chat/tests/test-seed-quoting.ps1`
   under Windows PowerShell 5.1. It opens no tabs: it writes configs to a temp
   folder and runs them against an argument-recording probe.
+- After any change under `skills/agent-menu/scripts/` or to
+  `agent-config.ps1`, run
+  `powershell -NoProfile -File skills/agent-menu/tests/test-agent-menu.ps1`
+  under Windows PowerShell 5.1 and `bash skills/agent-menu/tests/test-agent-menu.sh`
+  (also under Git Bash), and the launcher test above. They use temp folders
+  only.
 - After a change to a pane helper, check its syntax (`bash -n` for
   `pane.sh`, the PowerShell parser for `pane.ps1`) and try it end to end on a
   desktop session.
-- Launch fallbacks stay plain: with no user tab config the launcher adds no
-  flags beyond what a resume needs.
+- Launch fallbacks stay plain: with no user config the launcher adds no
+  flags beyond what a resume needs, and the shipped `agents.yaml` template
+  carries no flags, model, or path.
 
 ### Releases
 
