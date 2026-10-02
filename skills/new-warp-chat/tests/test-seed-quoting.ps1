@@ -330,6 +330,11 @@ Write-AgentsYaml "claude:`n  new: wrapper claude {args}`n"
 $r = Get-TabCommand @{ LaunchCmd = "claude"; WarningAction = "SilentlyContinue" }
 Report "config-wrong-command-skipped" (($r.Cmd -clike "*; claude") -and ($r.Msg -like "*documented default*")) ("cmd: " + $r.Cmd + "`n      msg: " + $r.Msg)
 
+# 16. The menu-only new_project line is ignored: the launcher still uses `new`.
+Write-AgentsYaml "claude:`n  args: --fixture-flag`n  new_project: claude {args} `"Create a new project in this folder.`"`n  new: claude {args}`n"
+$r = Get-TabCommand @{ LaunchCmd = "claude" }
+Report "config-new-project-ignored" (($r.Cmd -clike "*; claude --fixture-flag") -and ($r.Msg -like "*'claude' block, 'new' line*")) ("cmd: " + $r.Cmd + "`n      msg: " + $r.Msg)
+
 if ($null -ne $savedAgentMenuDir) { $env:AGENT_MENU_DIR = $savedAgentMenuDir } else { Remove-Item Env:\AGENT_MENU_DIR -ErrorAction SilentlyContinue }
 Remove-Item -Recurse -Force $WorkDir -ErrorAction SilentlyContinue
 if ($failures -gt 0) { Write-Output "$failures FAILURE(S)"; exit 1 }

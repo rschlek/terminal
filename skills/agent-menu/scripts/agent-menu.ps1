@@ -17,7 +17,9 @@
     Resume      the agent's `resume_all` line (else `resume`), in the home folder
   Project view: the directories directly under projects_root, recently opened
   first. Type to filter, Up/Down, Enter launches `new` there, Tab toggles to
-  `resume` there, Esc goes back.
+  `resume` there, Esc goes back. When the agent's block has a `new_project`
+  line, a pinned first row `+ new project` (new mode only, never filtered out)
+  runs that line in projects_root itself and records nothing in recent.tsv.
 
   Every command line comes from <AGENT_MENU_DIR>\agents.yaml, read through
   agent-config.ps1 (installed next to this script); the format and the
@@ -25,8 +27,10 @@
   same folder.
 
   Non-interactive modes (tests, and a quick check of a config edit):
-    -Print new|resume|resume_all   print the composed command line
-    -List                          print the project rows, tab-separated
+    -Print new|resume|resume_all|new_project   print the composed command line
+    -List                          print the project rows, tab-separated; with an
+                                   agent whose block has `new_project`, the pinned
+                                   `+ new project` row comes first
     -NoLaunch                      run the menu, print what it would run instead
 
 .EXAMPLE
@@ -35,7 +39,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)][string]$Agent,                                           # the agent block to use, e.g. claude | codex
-    [ValidateSet('new', 'resume', 'resume_all')][string]$Print,                        # print the composed command line and stop
+    [ValidateSet('new', 'resume', 'resume_all', 'new_project')][string]$Print,         # print the composed command line and stop
     [switch]$List,                                                                     # print the project rows and stop
     [switch]$NoLaunch                                                                  # interactive, but print the launch instead of running it
 )
@@ -46,8 +50,14 @@ $menuDir    = Get-AgentMenuDir
 $configPath = Join-Path $menuDir 'agents.yaml'
 $config     = Read-AgentConfig $configPath
 $root       = Get-ProjectsRoot $config
+# The pinned `+ new project` row: only when the agent's block has a new_project line
+# and the projects root exists.
+$hasNewProject = $false
+if ($Agent -and $root -and (Test-Path -LiteralPath $root -PathType Container) -and $null -ne (Get-AgentCommand $config $Agent 'new_project')) { $hasNewProject = $true }
+$newProjectLabel = '+ new project'
 
 if ($List) {
+    if ($hasNewProject) { "{0}`t{1}`t`t" -f $newProjectLabel, $root }
     $projects = Get-ProjectList $root
     foreach ($p in $projects) { "{0}`t{1}`t{2}`t{3}" -f $p.Name, $p.Path, $p.Scope, $p.Summary }
     return
@@ -113,7 +123,8 @@ function Show-HomeMenu {
     }
 }
 
-# --- The project view. Returns @{ Item; Mode } or $null on Esc.
+# --- The project view. Returns @{ Item; Mode }, @{ NewProject = $true } for the
+# pinned row, or $null on Esc.
 function Show-ProjectPicker([object[]]$Items) {
     $rows = [Math]::Max(3, [Math]::Min(12, [Console]::WindowHeight - 8))
     Open-Region ($rows + 5)
@@ -121,29 +132,37 @@ function Show-ProjectPicker([object[]]$Items) {
     $mode = 'new'
     $sel = 0
     $offset = 0
+    $onPin = $hasNewProject -and $Items.Count -eq 0                                 # the pinned row is selected
     [Console]::CursorVisible = $false
     try {
         while ($true) {
             $view = @($Items | Where-Object { $filter -eq '' -or $_.Name.IndexOf($filter, [StringComparison]::OrdinalIgnoreCase) -ge 0 })
+            $pin = 0
+            if ($hasNewProject -and $mode -eq 'new') { $pin = 1 }
+            if ($pin -eq 0) { $onPin = $false } elseif ($view.Count -eq 0) { $onPin = $true }
+            $projRows = $rows - $pin
             if ($sel -ge $view.Count) { $sel = [Math]::Max(0, $view.Count - 1) }
             if ($sel -lt $offset) { $offset = $sel }
-            if ($sel -ge $offset + $rows) { $offset = $sel - $rows + 1 }
+            if ($sel -ge $offset + $projRows) { $offset = $sel - $projRows + 1 }
 
             if ($mode -eq 'resume') { $head = " $Agent  -  RESUME a session"; $headColor = 'Yellow'; $hint = '(Tab: switch to new)' }
             else { $head = " $Agent  -  NEW session"; $headColor = 'Cyan'; $hint = '(Tab: switch to resume)' }
             Write-Row 0 ($head.PadRight(34) + $hint) $headColor
             Write-Row 1 ''
-            for ($r = 0; $r -lt $rows; $r++) {
+            if ($pin -eq 1) {
+                if ($onPin) { Write-Row 2 (" > $newProjectLabel") 'White' } else { Write-Row 2 ("   $newProjectLabel") 'DarkGray' }
+            }
+            for ($r = 0; $r -lt $projRows; $r++) {
                 $i = $offset + $r
                 if ($i -lt $view.Count) {
                     $it = $view[$i]
                     $text = '{0,-24} {1,-10} {2}' -f $it.Name, $it.Scope, $it.Summary
-                    if ($i -eq $sel) { Write-Row (2 + $r) (" > $text") 'White' } else { Write-Row (2 + $r) ("   $text") 'DarkGray' }
+                    if ($i -eq $sel -and -not $onPin) { Write-Row (2 + $pin + $r) (" > $text") 'White' } else { Write-Row (2 + $pin + $r) ("   $text") 'DarkGray' }
                 } else {
-                    Write-Row (2 + $r) ''
+                    Write-Row (2 + $pin + $r) ''
                 }
             }
-            $more = $view.Count - ($offset + $rows)
+            $more = $view.Count - ($offset + $projRows)
             if ($more -gt 0) { Write-Row ($rows + 2) "   ... $more more" 'DarkGray' }
             elseif ($view.Count -eq 0) { Write-Row ($rows + 2) '   no match' 'DarkGray' }
             else { Write-Row ($rows + 2) '' }
@@ -151,13 +170,16 @@ function Show-ProjectPicker([object[]]$Items) {
             Write-Row ($rows + 4) ' type to filter   Up/Down move   Tab new/resume   Enter select   Esc back' 'DarkGray'
 
             $key = [Console]::ReadKey($true)
-            if ($key.Key -eq 'UpArrow') { if ($sel -gt 0) { $sel-- } }
-            elseif ($key.Key -eq 'DownArrow') { if ($sel -lt $view.Count - 1) { $sel++ } }
+            if ($key.Key -eq 'UpArrow') { if ($onPin) { } elseif ($sel -gt 0) { $sel-- } elseif ($pin -eq 1) { $onPin = $true } }
+            elseif ($key.Key -eq 'DownArrow') { if ($onPin) { if ($view.Count -gt 0) { $onPin = $false; $sel = 0 } } elseif ($sel -lt $view.Count - 1) { $sel++ } }
             elseif ($key.Key -eq 'Tab') { if ($mode -eq 'new') { $mode = 'resume' } else { $mode = 'new' } }
-            elseif ($key.Key -eq 'Backspace') { if ($filter.Length -gt 0) { $filter = $filter.Substring(0, $filter.Length - 1); $sel = 0 } }
+            elseif ($key.Key -eq 'Backspace') { if ($filter.Length -gt 0) { $filter = $filter.Substring(0, $filter.Length - 1); $sel = 0; $onPin = $false } }
             elseif ($key.Key -eq 'Escape') { Close-Region; return $null }
-            elseif ($key.Key -eq 'Enter') { if ($view.Count -gt 0) { Close-Region; return @{ Item = $view[$sel]; Mode = $mode } } }
-            elseif ("$($key.KeyChar)" -match '^[A-Za-z0-9._ -]$') { $filter += $key.KeyChar; $sel = 0 }
+            elseif ($key.Key -eq 'Enter') {
+                if ($onPin) { Close-Region; return @{ NewProject = $true } }
+                if ($view.Count -gt 0) { Close-Region; return @{ Item = $view[$sel]; Mode = $mode } }
+            }
+            elseif ("$($key.KeyChar)" -match '^[A-Za-z0-9._ -]$') { $filter += $key.KeyChar; $sel = 0; $onPin = $false }
         }
     } finally {
         [Console]::CursorVisible = $true
@@ -174,8 +196,13 @@ while ($true) {
     if ($pick -eq 'resume') { $launchDir = $HOME; $launchMode = 'resume_all'; break }
     if (-not $root -or -not (Test-Path -LiteralPath $root -PathType Container)) { continue }
     $projects = Get-ProjectList $root
-    if ($projects.Count -eq 0) { continue }
+    if ($projects.Count -eq 0 -and -not $hasNewProject) { continue }
     $choice = Show-ProjectPicker $projects
+    if ($null -ne $choice -and $choice.NewProject) {
+        $launchDir = $root
+        $launchMode = 'new_project'
+        break
+    }
     if ($null -ne $choice) {
         $launchDir = $choice.Item.Path
         $launchMode = $choice.Mode

@@ -37,6 +37,10 @@ quoted="--fixture-flag --model fixture-model --config 'model_reasoning_effort=\"
   echo "  resume_all: codex resume --all {args}"
   echo
   printf 'bare:\r\n    # an indented comment\r\n  args:\r\n  resume: bare {args} --resume\r\n  note: keeps # this and '"'"'quotes'"'"'   \r\n'
+  echo
+  echo "np:"; echo "  args: --fixture-flag"; echo "  resume: np {args} --resume"
+  echo '  new_project: np {args} "Create a new project in this folder."'
+  echo "npbare:"; echo "  args:"; echo '  new_project: npbare {args} "Create a new project."'
 } > "$AGENT_MENU_DIR/agents.yaml"
 check config-projects-root-unquoted "$root" "$(projects_root)"
 check config-codex-new-verbatim "codex $quoted" "$(agent_command codex new)"
@@ -49,6 +53,11 @@ check config-missing-new-defaults "bare" "$(agent_command bare new)"
 check config-missing-block "1" "$(agent_command nope new >/dev/null 2>&1; echo $?)"
 check config-hash-and-quotes-kept "keeps # this and 'quotes'" "$(cfg_get bare note)"
 check menu-print-mode "codex resume $quoted" "$(bash "$scripts/agent-menu.sh" --print codex resume)"
+check config-new-project 'np --fixture-flag "Create a new project in this folder."' "$(agent_command np new_project)"
+check config-new-project-empty-args 'npbare "Create a new project."' "$(agent_command npbare new_project)"
+check config-new-project-absent "1" "$(agent_command claude new_project >/dev/null 2>&1; echo $?)"
+check menu-print-new-project 'np --fixture-flag "Create a new project in this folder."' "$(bash "$scripts/agent-menu.sh" --print np new_project)"
+check menu-print-new-project-absent "1|agent-menu: no 'new_project' line for 'claude' in $AGENT_MENU_DIR/agents.yaml" "$(e="$(bash "$scripts/agent-menu.sh" --print claude new_project 2>&1 >/dev/null)"; echo "$?|$e")"
 
 # --- 2. project.yaml fields.
 y="$work/p.yaml"
@@ -78,6 +87,8 @@ check recent-file-deduped "3" "$(wc -l < "$(recent_file)" | tr -d ' ')"
 check recent-file-newest-first "$root/gamma" "$(head -1 "$(recent_file)" | cut -f2)"
 check list-missing-root "" "$(list_projects "$work/nope")"
 check menu-list-mode "gamma" "$(bash "$scripts/agent-menu.sh" --list | head -1 | cut -f1)"
+check menu-list-pinned-row "+ new project	$root		|5" "$(bash "$scripts/agent-menu.sh" --list np | head -1)|$(bash "$scripts/agent-menu.sh" --list np | wc -l | tr -d ' ')"
+check menu-list-key-absent-unchanged "$(bash "$scripts/agent-menu.sh" --list)" "$(bash "$scripts/agent-menu.sh" --list claude)"
 
 # --- 4. Scripted sessions: keys from a file, the drawing to another, stdout = the eval line.
 UP=$'\033[A'; DOWN=$'\033[B'; ENTER=$'\n'; TAB=$'\t'; ESC=$'\033'
@@ -100,6 +111,22 @@ chmod +x "$work/bin/codex"
 line="$(session codex "${DOWN}${ENTER}gam${ENTER}")"
 ( PATH="$work/bin:$PATH"; eval "$line" )
 check session-eval-runs-in-folder "$(cd "$root/gamma" && pwd)|--fixture-flag|--model|fixture-model|--config|model_reasoning_effort=\"high\"" "$(paste -sd'|' "$work/ran")"
+
+# The pinned `+ new project` row (np has a new_project line; claude does not).
+first="$(list_projects "$root" | head -1 | cut -f2)"
+recent_before="$(cat "$(recent_file)")"
+check session-new-project "cd -- '$root' && np --fixture-flag \"Create a new project in this folder.\"" "$(session np "${DOWN}${ENTER}${UP}${ENTER}")"
+check session-new-project-screen "yes" "$(grep -qF '> + new project' "$work/screen" && echo yes || echo no)"
+check session-new-project-not-recorded "$recent_before" "$(cat "$(recent_file)")"
+check session-new-project-default-first "cd -- '$first' && np --fixture-flag" "$(session np "${DOWN}${ENTER}${ENTER}")"
+check session-new-project-survives-filter "cd -- '$root' && np --fixture-flag \"Create a new project in this folder.\"" "$(session np "${DOWN}${ENTER}zzz${ENTER}")"
+check session-new-project-hidden-in-resume "cd -- '$first' && np --fixture-flag --resume" "$(session np "${DOWN}${ENTER}${TAB}${UP}${ENTER}")"
+session claude "${DOWN}${ENTER}${ESC}${ESC}" > /dev/null
+check session-no-row-without-key "no" "$(grep -qF '+ new project' "$work/screen" && echo yes || echo no)"
+# An empty projects root: the view still opens, with the pinned row selected.
+mkdir -p "$work/empty-root" "$work/menu-empty"
+printf 'projects_root: %s\nnp:\n  new_project: np {args} new\n' "$work/empty-root" > "$work/menu-empty/agents.yaml"
+check session-new-project-empty-root "cd -- '$work/empty-root' && np new" "$(AGENT_MENU_DIR="$work/menu-empty" session np "${DOWN}${ENTER}${ENTER}")"
 
 # --- 5. Setup, against temp folders only.
 export AGENT_MENU_DIR="$work/menu2"

@@ -7,6 +7,9 @@
 # A value runs verbatim to the end of the line: quotes are kept as typed and a #
 # is part of the value (no inline comments). {args} in a command line is
 # replaced by the block's args, and dropped when args is empty.
+#
+# Optional per block: new_project, the line the "+ new project" row in the
+# project view runs in projects_root. Remove the "# " before it to turn the row on.
 
 # The folder whose subfolders the menu lists under "Project...".
 projects_root:
@@ -15,9 +18,11 @@ claude:
   args:
   new: claude {args}
   resume: claude {args} --resume
+  # new_project: claude {args} "Create a new project in this folder."
 
 codex:
   args:
   new: codex {args}
   resume: codex resume {args}
   resume_all: codex resume --all {args}
+  # new_project: codex {args} "Create a new project in this folder."

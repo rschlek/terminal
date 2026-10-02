@@ -42,7 +42,9 @@ Write-Text $configPath (@(
     "# a comment", "projects_root: `"$root`"", "",
     "claude:", "  args: --fixture-flag", "  new: claude {args}", "  resume: claude {args} --resume", "",
     "codex:", "  args: $quoted", "  new: codex {args}", "  resume: codex resume {args}", "  resume_all: codex resume --all {args}", "",
-    "bare:", "    # an indented comment", "  args:", "  resume: bare {args} --resume", "  note: keeps # this and 'quotes'   "
+    "bare:", "    # an indented comment", "  args:", "  resume: bare {args} --resume", "  note: keeps # this and 'quotes'   ", "",
+    "np:", "  args: --fixture-flag", "  new_project: np {args} `"Create a new project in this folder.`"",
+    "npbare:", "  args:", "  new_project: npbare {args} `"Create a new project.`""
 ) -join "`r`n")
 $c = Read-AgentConfig $configPath
 Report "config-projects-root-unquoted" ((Get-ProjectsRoot $c) -ceq $root) (Get-ProjectsRoot $c)
@@ -55,6 +57,9 @@ Report "config-empty-args-dropped" ((Get-AgentCommand $c 'bare' 'resume') -ceq "
 Report "config-missing-new-defaults" ((Get-AgentCommand $c 'bare' 'new') -ceq "bare") (Get-AgentCommand $c 'bare' 'new')
 Report "config-missing-block" ($null -eq (Get-AgentCommand $c 'nope' 'new')) ""
 Report "config-hash-and-quotes-kept" ($c.Blocks['bare']['note'] -ceq "keeps # this and 'quotes'") $c.Blocks['bare']['note']
+Report "config-new-project" ((Get-AgentCommand $c 'np' 'new_project') -ceq 'np --fixture-flag "Create a new project in this folder."') (Get-AgentCommand $c 'np' 'new_project')
+Report "config-new-project-empty-args" ((Get-AgentCommand $c 'npbare' 'new_project') -ceq 'npbare "Create a new project."') (Get-AgentCommand $c 'npbare' 'new_project')
+Report "config-new-project-absent" ($null -eq (Get-AgentCommand $c 'claude' 'new_project')) ""
 $c2 = @{ Top = @{ projects_root = '~\src' }; Blocks = @{} }
 Report "config-tilde-expands" ((Get-ProjectsRoot $c2) -ceq ($HOME + '\src')) (Get-ProjectsRoot $c2)
 
@@ -96,6 +101,15 @@ $out = & $menu codex -Print resume
 Report "menu-print-resume" ($out -ceq "codex resume $quoted") "$out"
 $rows = @(& $menu -List)
 Report "menu-list" (($rows.Count -eq 4) -and ($rows[0] -ceq ("gamma`t" + (Join-Path $root 'gamma') + "`twork`tThe gamma project"))) ($rows -join ' | ')
+$out = & $menu np -Print new_project
+Report "menu-print-new-project" ($out -ceq 'np --fixture-flag "Create a new project in this folder."') "$out"
+$info = @(& $menu claude -Print new_project 6>&1)
+$printed = @($info | Where-Object { $_ -isnot [System.Management.Automation.InformationRecord] })
+Report "menu-print-new-project-absent" (($printed.Count -eq 0) -and (($info -join ' ') -like "*has no 'new_project' line*")) ($info -join ' | ')
+$pinned = @(& $menu np -List)
+Report "menu-list-pinned-row" (($pinned.Count -eq 5) -and ($pinned[0] -ceq "+ new project`t$root`t`t") -and (($pinned[1..4] -join '|') -ceq ($rows -join '|'))) ($pinned -join ' | ')
+$plain = @(& $menu claude -List)
+Report "menu-list-key-absent-unchanged" (($plain -join '|') -ceq ($rows -join '|')) ($plain -join ' | ')
 
 # --- 5. Setup, against temp folders only.
 $tabs = $env:WARP_TAB_CONFIGS_DIR
