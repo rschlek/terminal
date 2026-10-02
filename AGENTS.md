@@ -39,8 +39,9 @@ keeps a copy. Fix a skill here, never in a consumer.
 Everything here is public and generic. Write for "the user". No person,
 username, host name, employer, team, or internal product; no absolute paths
 from any machine; no names of skills or plugins from other catalogs; no real
-tokens. The one exception is this repository's own URL. Setting up the
-terminals themselves belongs here too: `warp-setup` and `wezterm-setup` ship
+tokens. The exceptions are the `author` field in the plugin manifests (and the
+owner of the single-plugin catalog) and this repository's own URL. Setting up
+the terminals themselves belongs here too: `warp-setup` and `wezterm-setup` ship
 generic defaults (the plugin's default Warp look, a minimal WezTerm block) that
 any user can apply and change. What stays out is anything specific to one
 environment or person - a machine's paths, which launch flags or model pins

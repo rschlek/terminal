@@ -1,7 +1,7 @@
 {
   "name": "terminal",
   "owner": {
-    "name": "The terminal plugin maintainers"
+    "name": "Rainier"
   },
   "description": "Single-plugin catalog so this repository can be installed directly.",
   "plugins": [
