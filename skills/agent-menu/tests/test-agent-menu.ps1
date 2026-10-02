@@ -139,6 +139,16 @@ $msg = (& $setup) -join "`n"
 Report "setup-rerun-keeps-config" ([System.IO.File]::ReadAllText($newConfig) -ceq $edited) $msg
 Report "setup-rerun-tab-current" ($msg -like "*claude.toml is current*") $msg
 
+# Explicit -AgentArgs wins over -CarryArgs for its agent, and may be empty.
+$env:AGENT_MENU_DIR = Join-Path $WorkDir "menu3"
+Write-Standing 'claude' 'claude --fixture-flag'
+Write-Standing 'codex' "codex $quoted"
+$msg = (& $setup -CarryArgs -AgentArgs 'claude=--explicit-flag', 'codex=' -TabConfigsDir $tabs) -join "`n"
+$cfg = Read-AgentConfig (Join-Path $env:AGENT_MENU_DIR "agents.yaml")
+Report "setup-explicit-args" (((Get-AgentCommand $cfg 'claude' 'resume') -ceq 'claude --explicit-flag --resume') -and ((Get-AgentCommand $cfg 'codex' 'new') -ceq 'codex')) $msg
+$msg = (& $setup -AgentArgs 'claude=--other') -join "`n"
+Report "setup-explicit-args-existing-config" (($msg -like "*not applied*") -and ((Get-AgentCommand (Read-AgentConfig (Join-Path $env:AGENT_MENU_DIR "agents.yaml")) 'claude' 'new') -ceq 'claude --explicit-flag')) $msg
+
 foreach ($k in $saved.Keys) {
     if ($null -ne $saved[$k]) { Set-Item -Path "Env:\$k" -Value $saved[$k] } else { Remove-Item -Path "Env:\$k" -ErrorAction SilentlyContinue }
 }

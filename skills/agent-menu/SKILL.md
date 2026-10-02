@@ -20,8 +20,9 @@ Run the setup script for the platform (Windows:
 1. Run it with `-Check` (`--check`) first; it changes nothing and reports what
    it found, including flags the user's current tab configs launch with.
 2. If it reports flags and no config exists yet, ask the user whether to keep
-   them; pass `-CarryArgs` (`--carry-args`) if so. If a projects root is known
-   or the user names one, pass `-ProjectsRoot` (`--projects-root`).
+   them; pass `-CarryArgs` (`--carry-args`) if so. Flags the user asks for go in
+   with `-AgentArgs 'name=<args>'` (`--agent-args`). If a projects root is
+   known or the user names one, pass `-ProjectsRoot` (`--projects-root`).
 3. Run it for real and relay its report. It never deletes a redundant
    `<agent>-resume.toml`; remove one only when the user says so.
 
