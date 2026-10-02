@@ -13,9 +13,9 @@ description: >-
 
 # Agent menu
 
-Run the setup script for the platform (Windows:
-`${CLAUDE_PLUGIN_ROOT}/skills/agent-menu/scripts/setup.ps1`; macOS and Linux:
-`bash ${CLAUDE_PLUGIN_ROOT}/skills/agent-menu/scripts/setup.sh`).
+Run the setup script for the platform, by absolute path (this skill's folder
+plus `scripts/...`; Windows: `scripts/setup.ps1`; macOS and Linux:
+`bash scripts/setup.sh`).
 
 1. Run it with `-Check` (`--check`) first; it changes nothing and reports what
    it found, including flags the user's current tab configs launch with.

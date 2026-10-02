@@ -67,10 +67,13 @@ step - since the fresh context inherits none of this conversation. Keep it tight
 `breakout`, the step-1 CLI as the command, **no `-LaunchArgs`** (the standing tab
 config's args are inherited), step-2 additions as `-ExtraArgs`, the step-3 seed
 file. On Windows that is one call to its bundled helper (with no `-LaunchArgs`
-it reads the user's config itself):
+it reads the user's config itself), the sibling skill's script in the same plugin:
+`../new-warp-chat/scripts/new-warp-chat.ps1` from this skill's folder, called by
+absolute path:
 
 ```powershell
-& "${CLAUDE_PLUGIN_ROOT}/skills/new-warp-chat/scripts/new-warp-chat.ps1" `
+# $SkillDir = the absolute path of this skill's folder
+& "$SkillDir/../new-warp-chat/scripts/new-warp-chat.ps1" `
     -TabName breakout -LaunchCmd <cli> [-ExtraArgs '-C <dir>'] -SeedFile '<seed>'
 ```
 

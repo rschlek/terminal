@@ -32,9 +32,8 @@ job (run it in the background under a watchdog), or a result back from bulky rea
 
 `scripts/pane.sh` (Linux + macOS) and `scripts/pane.ps1` (Windows, PowerShell
 5.1 or Git Bash via `powershell -NoProfile -File`), both tested end to end.
-Call it by absolute path, never a relative one:
-`${CLAUDE_PLUGIN_ROOT}/skills/shared-pane/scripts/pane.sh` (prefix `bash` if the
-execute bit was lost) or `.../pane.ps1`. It handles the unique window class and
+Call it by absolute path, never a relative one: this skill's folder plus
+`scripts/pane.sh` (prefix `bash` if the execute bit was lost) or `scripts/pane.ps1`. It handles the unique window class and
 the per-GUI socket for you - do not re-derive those. If `open` fails with "wezterm
 GUI did not publish a socket", check that WezTerm is installed and can start a
 GUI window on this desktop (set `WEZTERM_BIN` if it is not on PATH), or run

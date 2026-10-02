@@ -15,7 +15,8 @@ warp-setup/assets/
   settings.linux.toml    # Linux-only overlay: comments only today
 ```
 
-Reference them as `${CLAUDE_PLUGIN_ROOT}/skills/warp-setup/assets/...`.
+Reference them by absolute path: the warp-setup skill's folder (above
+`references/`) plus `assets/...`.
 
 The default look: theme `adeberry` (one of Warp's built-in themes), font size
 13, notebook font size 14, zoom 125, vertical tabs on, the system theme off,
