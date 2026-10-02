@@ -17,8 +17,9 @@ description: >-
 An agent cannot type the user's password and must never see it. A shared pane
 removes the wall that creates: **one terminal window both parties drive.** This
 is the **default** for interactive-auth steps on a desktop machine. It needs
-WezTerm installed (set `WEZTERM_BIN` if it is not on PATH); this skill is the
-run-time procedure. Harness-neutral: it runs the same under Claude Code and Codex.
+WezTerm installed (set `WEZTERM_BIN` if it is not on PATH; the sibling
+`wezterm-setup` skill installs and configures it); this skill is the run-time
+procedure. Harness-neutral: it runs the same under Claude Code and Codex.
 
 Reach for it on any step where a human must supply something the agent cannot (a
 typed secret, an MFA approval, an interactive login) **and** the agent needs the
@@ -36,7 +37,8 @@ Call it by absolute path, never a relative one:
 execute bit was lost) or `.../pane.ps1`. It handles the unique window class and
 the per-GUI socket for you - do not re-derive those. If `open` fails with "wezterm
 GUI did not publish a socket", check that WezTerm is installed and can start a
-GUI window on this desktop (set `WEZTERM_BIN` if it is not on PATH). The state
+GUI window on this desktop (set `WEZTERM_BIN` if it is not on PATH), or run
+`wezterm-setup`, which verifies exactly that. The state
 file, `WEZTERM_BIN` and the Windows calling form are in the reference and the
 `pane.ps1` header.
 

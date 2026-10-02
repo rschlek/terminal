@@ -1,0 +1,25 @@
+# Linux-only Warp settings overlay managed by the warp-setup skill.
+#
+# Merged on Linux exactly the way settings.windows.toml is merged on Windows, and
+# ignored everywhere else. It deliberately manages **no keys today** - comments only -
+# because the shared settings.toml asset already IS the whole Linux desired state
+# (checked against a hand-configured Fedora / GNOME Wayland desktop). It ships anyway
+# so the apply logic stays uniform (shared base + one OS overlay) and so a future
+# Linux-only key has exactly one home instead of being sprinkled into the base.
+#
+# What is deliberately NOT here:
+#
+# [terminal.input] - the Windows overlay's Shell (PS1) safeguard.
+#   honor_ps1 and input_box_type_setting are cross-platform keys, but the pathology
+#   they defend against on Windows (Warp's native Git prompt polling repeatedly
+#   spawning PowerShell + Git probes and amplifying endpoint-security scanning) is
+#   Windows-only. On Linux this section stays UNMANAGED - whatever the user has.
+#
+# [system] - Warp's documented Linux-only keys (e.g. force_x11,
+#   linux_selection_clipboard) live under this section. None are managed: force_x11 in
+#   particular is a rendering escape hatch some machines need set the other way, and an
+#   overlay key WINS on conflict, so pinning it could break a working box. If a machine
+#   ever genuinely needs one, add it here (and nowhere else) with the reason.
+#
+# Wayland is an environment concern, not a settings key: Warp's docs gate it behind
+# WARP_ENABLE_WAYLAND=1 in the environment. Out of scope for a config applier.

@@ -8,7 +8,7 @@
     {
       "name": "terminal",
       "source": "./",
-      "description": "Terminal skills: a shared WezTerm window for interactive logins, seeded new chats in Warp tabs, and a per-agent Warp tab menu.",
+      "description": "Terminal skills: a shared WezTerm window for interactive logins, seeded new chats in Warp tabs, a per-agent Warp tab menu, and Warp and WezTerm setup.",
       "category": "productivity"
     }
   ]

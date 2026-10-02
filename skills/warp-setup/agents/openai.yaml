@@ -1,0 +1,4 @@
+interface:
+  display_name: "Warp setup"
+  short_description: "Apply the default Warp look and agent tabs on this device"
+  default_prompt: "Set up Warp on this machine."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "WezTerm setup"
+  short_description: "Install and configure WezTerm for shared panes"
+  default_prompt: "Set up WezTerm so shared panes work on this machine."
