@@ -128,5 +128,14 @@ msg="$(bash "$scripts/setup.sh")"
 check setup-rerun-keeps-config "$edited" "$(cat "$AGENT_MENU_DIR/agents.yaml")"
 check setup-rerun-tab-current "yes" "$(printf '%s' "$msg" | grep -q 'claude.toml is current' && echo yes || echo no)"
 
+# Explicit --agent-args wins over --carry-args for its agent, and may be empty.
+export AGENT_MENU_DIR="$work/menu3"
+standing claude "claude --fixture-flag"
+standing codex "codex $quoted"
+bash "$scripts/setup.sh" --carry-args --agent-args 'claude=--explicit-flag' --agent-args 'codex=' > /dev/null
+check setup-explicit-args "claude --explicit-flag --resume|codex" "$(agent_command claude resume)|$(agent_command codex new)"
+msg="$(bash "$scripts/setup.sh" --agent-args 'claude=--other')"
+check setup-explicit-args-existing-config "yes|claude --explicit-flag" "$(printf '%s' "$msg" | grep -q 'not applied' && echo yes || echo no)|$(agent_command claude new)"
+
 if [ "$failures" -gt 0 ]; then echo "$failures FAILURE(S)"; exit 1; fi
 echo "All $total cases passed."

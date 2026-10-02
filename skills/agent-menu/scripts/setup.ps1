@@ -17,8 +17,11 @@
   -Check reports what it found and would do, and changes nothing. Its report
   includes the flags each existing standing tab config launches with, so the
   caller can ask the user whether to keep them: -CarryArgs writes those flags
-  into each block's `args` line when the config is created now. -ProjectsRoot
-  fills projects_root in a newly created config.
+  into each block's `args` line when the config is created now. -AgentArgs
+  'name=<args>' sets a block's `args` explicitly (it wins over -CarryArgs for
+  that agent). -ProjectsRoot fills projects_root in a newly created config.
+  All three apply only when the config is created; an existing one is never
+  rewritten.
 
   The tab_configs dir defaults to Warp's; WARP_TAB_CONFIGS_DIR (or
   -TabConfigsDir) points it elsewhere, as for the new-warp-chat launcher.
@@ -27,12 +30,15 @@
   setup.ps1 -Check
 .EXAMPLE
   setup.ps1 -CarryArgs -ProjectsRoot 'D:\src'
+.EXAMPLE
+  setup.ps1 -AgentArgs 'claude=--some-flag', 'codex=--model some-model'
 #>
 [CmdletBinding()]
 param(
     [string[]]$Agents = @('claude', 'codex'),                                          # one tab config per agent; each needs a block in agents.yaml
     [string]$ProjectsRoot = '',                                                        # projects_root for a NEWLY created config
     [switch]$CarryArgs,                                                                # carry flags from existing standing tab configs into a new config
+    [string[]]$AgentArgs = @(),                                                        # 'name=<args>': explicit args for a block in a new config
     [switch]$Check,                                                                    # report only; change nothing
     [string]$TabConfigsDir = $(if ($env:WARP_TAB_CONFIGS_DIR) { $env:WARP_TAB_CONFIGS_DIR } else { Join-Path $env:APPDATA "warp\Warp\data\tab_configs" })
 )
@@ -48,6 +54,12 @@ function Say([string]$Text) { Write-Output "agent-menu setup: $Text" }
 
 foreach ($a in $Agents) {
     if ($a -notmatch '^[A-Za-z0-9._-]+$') { throw "agent-menu setup: an agent name may only contain letters, digits, '.', '_', '-' (got: $a)" }
+}
+# --- Explicit args: 'name=<args>', the args verbatim (an empty value is allowed).
+$explicit = @{}
+foreach ($pair in $AgentArgs) {
+    if ($pair -notmatch '^([A-Za-z0-9._-]+)=(.*)$') { throw "agent-menu setup: -AgentArgs takes 'name=<args>' (got: $pair)" }
+    $explicit[$Matches[1]] = $Matches[2].Trim()
 }
 
 # --- What each existing standing tab config runs today. Flags = the command minus a
@@ -89,9 +101,12 @@ if ($configExists) {
             if ($have -ne $found[$a].Flags) { Say "the '$a' block's args are [$have]; the old tab config used [$($found[$a].Flags)] - edit the config to keep them" }
         }
     }
+    foreach ($k in $explicit.Keys) { Say "-AgentArgs for '$k' not applied: the config exists; edit its '$k' block instead" }
 } else {
     Say "config $configPath will be created from the template"
+    foreach ($k in $explicit.Keys) { Say "  '$k' args: [$($explicit[$k])] (from -AgentArgs)" }
     foreach ($a in $Agents) {
+        if ($explicit.ContainsKey($a)) { continue }
         if ($found[$a].Flags) {
             if ($CarryArgs) { Say "  '$a' args: $($found[$a].Flags) (carried from the old tab config)" }
             else { Say "  '$a' args left empty; -CarryArgs would keep: $($found[$a].Flags)" }
@@ -127,6 +142,9 @@ if (-not $configExists) {
         if ($line -match '^([A-Za-z0-9_.-]+):\s*$') { $block = $Matches[1] }
         elseif ($line -match '^\S') { $block = $null }
         if ($line -match '^projects_root:' -and $ProjectsRoot) { $line = "projects_root: $ProjectsRoot" }
+        elseif ($line -match '^  args:' -and $block -and $explicit.ContainsKey($block)) {
+            $line = ("  args: " + $explicit[$block]).TrimEnd()
+        }
         elseif ($line -match '^  args:' -and $CarryArgs -and $block -and $found.ContainsKey($block) -and $found[$block].Flags) {
             $line = "  args: $($found[$block].Flags)"
         }

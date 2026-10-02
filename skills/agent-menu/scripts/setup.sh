@@ -9,12 +9,15 @@
 #      config is first copied to $AGENT_MENU_DIR/backup/;
 #   4. reports any <agent>-resume.toml as redundant - it never deletes one.
 #
-#   setup.sh [--check] [--carry-args] [--projects-root <dir>] [--agents "claude codex"]
+#   setup.sh [--check] [--carry-args] [--agent-args 'name=<args>']... [--projects-root <dir>]
+#            [--agents "claude codex"]
 #
 # --check reports what it found and would do and changes nothing, including the flags each
 # existing standing tab config launches with; --carry-args writes those flags into each
-# block's `args` line when the config is created now; --projects-root fills projects_root
-# in a newly created config. WARP_TAB_CONFIGS_DIR overrides Warp's tab_configs dir
+# block's `args` line when the config is created now; --agent-args 'name=<args>' sets a
+# block's `args` explicitly (repeatable; wins over --carry-args for that agent);
+# --projects-root fills projects_root. All three apply only when the config is created; an
+# existing one is never rewritten. WARP_TAB_CONFIGS_DIR overrides Warp's tab_configs dir
 # (macOS ~/.warp/tab_configs, Linux ${XDG_DATA_HOME:-~/.local/share}/warp-terminal/tab_configs).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,10 +26,16 @@ skill="$(dirname "$here")"
 . "$here/agent-menu.sh"
 
 check=0; carry=0; root_arg=""; agents="claude codex"
+# Explicit args, parallel arrays (bash 3.2 has no associative arrays).
+explicit_names=(); explicit_args=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --check) check=1 ;;
     --carry-args) carry=1 ;;
+    --agent-args)
+      pair="${2:?--agent-args needs name=<args>}"; shift
+      [[ "$pair" =~ ^([A-Za-z0-9._-]+)=(.*)$ ]] || { echo "setup.sh: --agent-args takes name=<args> (got: $pair)" >&2; exit 2; }
+      explicit_names+=("${BASH_REMATCH[1]}"); explicit_args+=("${BASH_REMATCH[2]}") ;;
     --projects-root) root_arg="${2:?--projects-root needs a value}"; shift ;;
     --agents) agents="${2:?--agents needs a value}"; shift ;;
     *) echo "setup.sh: unknown argument $1" >&2; exit 2 ;;
@@ -34,6 +43,14 @@ while [ $# -gt 0 ]; do
   shift
 done
 say() { printf 'agent-menu setup: %s\n' "$*"; }
+# explicit_for <agent>: prints the explicit args and exits 0, or exits 1 when none were given.
+explicit_for() {
+  local i
+  for ((i = 0; i < ${#explicit_names[@]}; i++)); do
+    if [ "${explicit_names[$i]}" = "$1" ]; then printf '%s' "${explicit_args[$i]}"; return 0; fi
+  done
+  return 1
+}
 
 if [ -n "${WARP_TAB_CONFIGS_DIR:-}" ]; then tabdir="$WARP_TAB_CONFIGS_DIR"
 elif [ "$(uname -s)" = Darwin ]; then tabdir="$HOME/.warp/tab_configs"
@@ -96,9 +113,16 @@ if [ -f "$config" ]; then
       [ "$have" = "$fl" ] || say "the '$a' block's args are [$have]; the old tab config used [$fl] - edit the config to keep them"
     fi
   done
+  for ((i = 0; i < ${#explicit_names[@]}; i++)); do
+    say "--agent-args for '${explicit_names[$i]}' not applied: the config exists; edit its block instead"
+  done
 else
   say "config $config will be created from the template"
+  for ((i = 0; i < ${#explicit_names[@]}; i++)); do
+    say "  '${explicit_names[$i]}' args: [${explicit_args[$i]}] (from --agent-args)"
+  done
   for a in $agents; do
+    if explicit_for "$a" >/dev/null; then continue; fi
     fl="$(flags_for "$a")"
     [ -n "$fl" ] || continue
     if [ "$carry" = 1 ]; then say "  '$a' args: $fl (carried from the old tab config)"
@@ -121,6 +145,8 @@ if [ ! -f "$config" ]; then
     if [[ "$line" =~ ^([A-Za-z0-9_.-]+):[[:space:]]*$ ]]; then block="${BASH_REMATCH[1]}"
     elif [[ "$line" =~ ^[^[:space:]] ]]; then block=""; fi
     if [[ "$line" == projects_root:* ]] && [ -n "$root_arg" ]; then line="projects_root: $root_arg"
+    elif [[ "$line" == '  args:'* ]] && [ -n "$block" ] && explicit_for "$block" >/dev/null; then
+      ex="$(explicit_for "$block")"; line="  args: $ex"; line="${line%"${line##*[![:space:]]}"}"
     elif [[ "$line" == '  args:'* ]] && [ "$carry" = 1 ] && [ -n "$block" ]; then
       fl="$(flags_for "$block")"; [ -z "$fl" ] || line="  args: $fl"
     fi
