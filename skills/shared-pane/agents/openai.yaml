@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shared pane"
+  short_description: "Share a WezTerm window for a password, MFA, or interactive login"
+  default_prompt: "Open a shared pane so I can type the password, then keep going in that shell."

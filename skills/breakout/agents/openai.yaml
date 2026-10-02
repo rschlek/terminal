@@ -1,0 +1,4 @@
+interface:
+  display_name: "Breakout"
+  short_description: "Open a fresh chat of the same CLI in a new Warp tab"
+  default_prompt: "Break out into a fresh chat in a new tab."

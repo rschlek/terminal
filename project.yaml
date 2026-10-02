@@ -1,0 +1,9 @@
+project: terminal
+title: Terminal
+summary: "Terminal skills for Claude Code and Codex: a WezTerm window the user and the agent share for interactive logins, and seeded new chats in Warp tabs, for anyone whose agent runs in those terminals."
+scope: personal
+visibility: public
+tracking:
+memory:
+links:
+  repo: https://github.com/rschlek/terminal
