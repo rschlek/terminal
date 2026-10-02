@@ -1,0 +1,4 @@
+interface:
+  display_name: "New Warp chat"
+  short_description: "Open a new Warp tab that runs a command with an optional seed"
+  default_prompt: "Open a new Warp tab that runs this command."

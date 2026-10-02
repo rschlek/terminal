@@ -1,0 +1,23 @@
+{
+  "name": "terminal",
+  "version": "1.0.0",
+  "description": "Terminal skills for a coding agent: shared-pane (one WezTerm window the user and the agent both drive, for passwords, MFA and interactive logins), new-warp-chat (open a seeded tab in the running Warp terminal), and breakout (open a fresh chat of the same CLI in a new Warp tab).",
+  "author": {
+    "name": "The terminal plugin maintainers"
+  },
+  "repository": "https://github.com/rschlek/terminal",
+  "license": "MIT",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Terminal",
+    "shortDescription": "Share a WezTerm window for logins, and open seeded chats in new Warp tabs.",
+    "longDescription": "Skills for working across terminal windows: shared-pane opens one WezTerm window where the user types a password or approves MFA and the agent keeps driving the same authenticated shell; new-warp-chat opens a new tab in the running Warp terminal that runs a command with an optional seed prompt; breakout uses it to open a fresh chat of the same CLI, launched with the flags from the user's own Warp tab configs.",
+    "developerName": "The terminal plugin maintainers",
+    "category": "Productivity",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "defaultPrompt": "Open a fresh chat in a new tab."
+  }
+}

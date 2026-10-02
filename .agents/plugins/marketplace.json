@@ -1,0 +1,14 @@
+{
+  "name": "terminal",
+  "interface": {
+    "displayName": "Terminal (direct install)"
+  },
+  "plugins": [
+    {
+      "name": "terminal",
+      "source": { "source": "local", "path": "./" },
+      "policy": { "installation": "AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}
