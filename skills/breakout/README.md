@@ -10,5 +10,6 @@ the seed says, and launches through the sibling `new-warp-chat` skill.
 
 ## Prerequisites
 
-Warp installed and running. Launch flags come from the user's own Warp tab
-configs when they exist; otherwise the plain CLI is launched.
+Warp installed and running. Launch flags come from the user's own config (the
+agent menu's `agents.yaml`, else the user's Warp tab configs) when it exists;
+otherwise the plain CLI is launched.

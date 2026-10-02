@@ -1,7 +1,7 @@
 {
   "name": "terminal",
-  "version": "1.0.0",
-  "description": "Terminal skills for a coding agent: shared-pane (one WezTerm window the user and the agent both drive, for passwords, MFA and interactive logins), new-warp-chat (open a seeded tab in the running Warp terminal), and breakout (open a fresh chat of the same CLI in a new Warp tab).",
+  "version": "1.1.0",
+  "description": "Terminal skills for a coding agent: shared-pane (one WezTerm window the user and the agent both drive, for passwords, MFA and interactive logins), new-warp-chat (open a seeded tab in the running Warp terminal), breakout (open a fresh chat of the same CLI in a new Warp tab), and agent-menu (standing Warp tabs that open a home / project / resume menu per agent CLI).",
   "author": {
     "name": "The terminal plugin maintainers"
   },

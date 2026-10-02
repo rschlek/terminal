@@ -14,18 +14,23 @@
   silently truncates. That truncation is the exact bug this script exists to
   kill; keeping the escaping in code (not inline prose) is why it cannot regress.
 
-  LAUNCH ARGS - ONE SOURCE OF TRUTH. When the caller omits -LaunchArgs, the
-  arguments are INHERITED from the user's own standing Warp tab config for
-  that command, when it exists: <tab_configs>\<LaunchCmd>.toml (or <LaunchCmd>-resume.toml with
-  -Resume). The launcher takes the config's `commands` entry, strips the leading
-  command name, and uses the rest VERBATIM - so whatever flags the standing tab
-  carries on this machine (permission mode, a model or reasoning pin, anything)
-  reach the new tab unchanged, and nothing about them lives in this script.
-  -ExtraArgs appends caller additions (e.g. `-C <dir>`, a session id) without
-  replacing the inherited set. An explicit -LaunchArgs replaces the whole set.
-  With no standing config the launcher falls back to the documented defaults
-  below (no extra flags; a resume keeps only what resume needs) and says so. It always prints which args it used and where they came
-  from.
+  LAUNCH ARGS - THE USER'S OWN CONFIG. When the caller omits -LaunchArgs, the
+  arguments are INHERITED, first match wins:
+    1. the agent menu's per-user config (<AGENT_MENU_DIR>\agents.yaml, default
+       %LOCALAPPDATA%\agent-menu): the <LaunchCmd> block's `new` line (its
+       `resume` line with -Resume), {args} substituted;
+    2. the user's standing Warp tab config <tab_configs>\<LaunchCmd>.toml (or
+       <LaunchCmd>-resume.toml with -Resume), for a machine without the menu;
+    3. the documented defaults below (no extra flags; a resume keeps only what
+       resume needs), and the launcher says so.
+  From 1 or 2 it takes the command line, strips the leading command name, and
+  uses the rest VERBATIM - so whatever flags the user set on this machine
+  (permission mode, a model or reasoning pin, anything) reach the new tab
+  unchanged, and nothing about them lives in this script. A source whose
+  command is not <LaunchCmd> is skipped with a warning. -ExtraArgs appends
+  caller additions (e.g. `-C <dir>`, a session id) without replacing the
+  inherited set. An explicit -LaunchArgs replaces the whole set. It always
+  prints which args it used and where they came from.
 
   The seed reaches this script through a FILE, never a command line - pass
   -SeedFile, not the text - so quotes / newlines / $ / backticks in the prompt
@@ -38,18 +43,20 @@
   Warp's + menu. The tab name may not collide with a standing config name.
 
   The tab_configs dir defaults to Warp's; set WARP_TAB_CONFIGS_DIR (or pass
-  -TabConfigsDir) to point it elsewhere - tests use a temp dir.
+  -TabConfigsDir) to point it elsewhere. The agent menu's dir likewise follows
+  AGENT_MENU_DIR (or -AgentMenuDir). Tests point both at a temp dir.
 
 .EXAMPLE
   new-warp-chat.ps1 -TabName breakout -LaunchCmd claude -SeedFile C:\tmp\seed.txt
-  # args inherited from <tab_configs>\claude.toml
+  # args from the claude block's `new` line in agents.yaml, else <tab_configs>\claude.toml
 .EXAMPLE
   new-warp-chat.ps1 -TabName breakout -LaunchCmd codex -ExtraArgs '-C C:\work\proj' -SeedFile C:\tmp\seed.txt
-  # args inherited from <tab_configs>\codex.toml, then `-C C:\work\proj` appended
+  # args inherited (agents.yaml, else codex.toml), then `-C C:\work\proj` appended
 .EXAMPLE
   new-warp-chat.ps1 -TabName codex-chat -LaunchCmd codex -Resume -ExtraArgs '<session-id>'
-  # args inherited from <tab_configs>\codex-resume.toml (the `resume` subcommand
-  # and its flags kept verbatim), the session id appended
+  # args from the codex block's `resume` line (e.g. `codex resume {args}`: the
+  # `resume` subcommand and its flags kept verbatim), else codex-resume.toml;
+  # the session id appended
 .EXAMPLE
   new-warp-chat.ps1 -TabName codex-chat -LaunchCmd codex -LaunchArgs ''
   # explicit override: nothing inherited, plain `codex`, empty fresh chat, no seed
@@ -57,20 +64,22 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$LaunchCmd,                                          # e.g. claude | codex
-    [string]$LaunchArgs,                                                               # explicit override; OMIT to inherit from the standing tab config
+    [string]$LaunchArgs,                                                               # explicit override; OMIT to inherit from the user's config
     [string]$ExtraArgs = "",                                                           # appended after the inherited/explicit/default args, verbatim
-    [switch]$Resume,                                                                   # inherit from <LaunchCmd>-resume.toml instead of <LaunchCmd>.toml
+    [switch]$Resume,                                                                   # inherit the resume form (`resume` line, or <LaunchCmd>-resume.toml)
     [string]$SeedFile = "",                                                            # path to a file holding the seed (robust; never transits a command line)
     [string]$TabName = "new-warp-chat",                                                # names the tab, its config file, and the warp:// URI
     [string]$TabConfigsDir = $(if ($env:WARP_TAB_CONFIGS_DIR) { $env:WARP_TAB_CONFIGS_DIR } else { Join-Path $env:APPDATA "warp\Warp\data\tab_configs" }),
+    [string]$AgentMenuDir = $(if ($env:AGENT_MENU_DIR) { $env:AGENT_MENU_DIR } else { Join-Path $env:LOCALAPPDATA "agent-menu" }),
     [switch]$NoLaunch                                                                  # write the config but skip the warp:// launch (tests / batch prep)
 )
 $ErrorActionPreference = "Stop"
 
-# --- Documented fallback defaults, used ONLY when no standing tab config exists
-# for the command on this machine. They add nothing beyond what a resume itself
-# needs: no permission mode, model, tenant, or machine pin belongs here - those
-# live in the user's own standing Warp tab configs, or are passed explicitly.
+# --- Documented fallback defaults, used ONLY when neither the agent menu's config
+# nor a standing tab config gives args for the command on this machine. They add
+# nothing beyond what a resume itself needs: no permission mode, model, tenant, or
+# machine pin belongs here - those live in the user's own config, or are passed
+# explicitly.
 $documentedDefaults = @{
     'claude'        = ''
     'claude-resume' = '--resume'
@@ -109,22 +118,47 @@ function Get-StandingLaunchArgs([string]$path, [string]$cmd) {
     return ""
 }
 
-# --- Resolve the launch args: explicit > inherited from the standing config >
-# documented default. -ExtraArgs is appended to whichever won.
-$standingName = if ($Resume) { "$LaunchCmd-resume" } else { $LaunchCmd }
-$standingPath = Join-Path $TabConfigsDir "$standingName.toml"
+# --- Read the launch args out of the agent menu's config: the <cmd> block's `new`
+# (or `resume`) line, composed by the shared reader (agent-menu/scripts/
+# agent-config.ps1 - one parser for the menu and this launcher), minus the leading
+# command name. $null when the config, the block, or the line is absent.
+function Get-AgentConfigLaunchArgs([string]$path, [string]$cmd, [string]$mode) {
+    . (Join-Path $PSScriptRoot "..\..\agent-menu\scripts\agent-config.ps1")
+    $line = Get-AgentCommand (Read-AgentConfig $path) $cmd $mode
+    if ($null -eq $line) { return $null }
+    $parts = $line -split '\s+', 2
+    if ($parts[0] -ine $cmd) {
+        Write-Warning "new-warp-chat: the '$cmd' block in $path runs '$($parts[0])', not '$cmd'; not inheriting from it"
+        return $null
+    }
+    if ($parts.Count -gt 1) { return $parts[1].Trim() }
+    return ""
+}
+
+# --- Resolve the launch args: explicit > the agent menu's config > the standing
+# tab config > documented default. -ExtraArgs is appended to whichever won.
+$standingName    = if ($Resume) { "$LaunchCmd-resume" } else { $LaunchCmd }
+$standingPath    = Join-Path $TabConfigsDir "$standingName.toml"
+$agentConfigPath = Join-Path $AgentMenuDir "agents.yaml"
+$agentMode       = if ($Resume) { "resume" } else { "new" }
 if ($PSBoundParameters.ContainsKey('LaunchArgs')) {
     $resolvedArgs = $LaunchArgs
     $argsSource   = "explicit -LaunchArgs (nothing inherited)"
 } else {
     $inherited = $null
-    if (Test-Path -LiteralPath $standingPath) { $inherited = Get-StandingLaunchArgs $standingPath $LaunchCmd }
+    if (Test-Path -LiteralPath $agentConfigPath) { $inherited = Get-AgentConfigLaunchArgs $agentConfigPath $LaunchCmd $agentMode }
     if ($null -ne $inherited) {
         $resolvedArgs = $inherited
-        $argsSource   = "inherited from $standingPath"
+        $argsSource   = "inherited from $agentConfigPath ('$LaunchCmd' block, '$agentMode' line)"
     } else {
-        $resolvedArgs = if ($documentedDefaults.ContainsKey($standingName)) { $documentedDefaults[$standingName] } else { "" }
-        $argsSource   = "no standing tab config at $standingPath - using the documented default for '$standingName'"
+        if (Test-Path -LiteralPath $standingPath) { $inherited = Get-StandingLaunchArgs $standingPath $LaunchCmd }
+        if ($null -ne $inherited) {
+            $resolvedArgs = $inherited
+            $argsSource   = "inherited from $standingPath"
+        } else {
+            $resolvedArgs = if ($documentedDefaults.ContainsKey($standingName)) { $documentedDefaults[$standingName] } else { "" }
+            $argsSource   = "no '$LaunchCmd' entry in $agentConfigPath and no standing tab config at $standingPath - using the documented default for '$standingName'"
+        }
     }
 }
 if ($ExtraArgs) {

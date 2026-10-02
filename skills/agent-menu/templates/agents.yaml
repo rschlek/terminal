@@ -1,0 +1,23 @@
+# Agent menu config: how each agent CLI is launched. Read by the agent menu and by
+# the new-warp-chat launcher; edit it here, nothing else holds these flags.
+#
+# Format (flat, read line by line - not full YAML):
+#   key: value         a top-level setting
+#   name:              an agent block; its settings follow, indented two spaces
+# A value runs verbatim to the end of the line: quotes are kept as typed and a #
+# is part of the value (no inline comments). {args} in a command line is
+# replaced by the block's args, and dropped when args is empty.
+
+# The folder whose subfolders the menu lists under "Project...".
+projects_root:
+
+claude:
+  args:
+  new: claude {args}
+  resume: claude {args} --resume
+
+codex:
+  args:
+  new: codex {args}
+  resume: codex resume {args}
+  resume_all: codex resume --all {args}

@@ -39,10 +39,11 @@ running in now**. Read the environment to decide, in priority order:
 - **If still ambiguous**, ask the user which CLI to open - do not guess.
 
 **2. Resolve the launch command; do NOT pick the args.** The command is the detected
-CLI. The **launch args come from the user's own standing Warp tab config for that
-CLI**, when it exists (`<tab_configs>/claude.toml` or `codex.toml`, the `-resume`
-variant for a resume): the single source of truth for how a CLI is launched here, any
-machine or tenant pin (model, reasoning effort, permission mode) included. `new-warp-chat`
+CLI. The **launch args come from the user's own config for that CLI**: the agent
+menu's `agents.yaml` block (its `new` line, or `resume` for a resume) when there is
+one, else the standing Warp tab config (`<tab_configs>/claude.toml` or `codex.toml`,
+the `-resume` variant for a resume). That is how a CLI is launched here, any machine
+or tenant pin (model, reasoning effort, permission mode) included. `new-warp-chat`
 inherits them when you omit the args, so breakout **adds only two things**:
 
 - the **working directory**, when the new tab must land in a specific project and
@@ -51,7 +52,7 @@ inherits them when you omit the args, so breakout **adds only two things**:
 
 Drop or override a flag **only when the user asks**: `-ExtraArgs` to add to the set,
 an explicit `-LaunchArgs` to replace it. Never restate the standing flags here, and
-never carry a model name in this skill. Without those standing configs the launcher
+never carry a model name in this skill. Without either source the launcher
 falls back to the plain CLI (no extra flags; a resume keeps only what resume needs)
 and says so; that table, and how a user who wants a permission mode or other flag
 gets it, are in [new-warp-chat's reference](../new-warp-chat/references/launch-mechanics.md).
@@ -65,7 +66,8 @@ step - since the fresh context inherits none of this conversation. Keep it tight
 **4. Launch via `new-warp-chat`.** Follow the sibling skill's SKILL.md: tab name
 `breakout`, the step-1 CLI as the command, **no `-LaunchArgs`** (the standing tab
 config's args are inherited), step-2 additions as `-ExtraArgs`, the step-3 seed
-file. On Windows that is one call to its bundled helper:
+file. On Windows that is one call to its bundled helper (with no `-LaunchArgs`
+it reads the user's config itself):
 
 ```powershell
 & "${CLAUDE_PLUGIN_ROOT}/skills/new-warp-chat/scripts/new-warp-chat.ps1" `
@@ -74,8 +76,8 @@ file. On Windows that is one call to its bundled helper:
 
 (**Omit `-SeedFile` entirely** for an empty chat; omit `-ExtraArgs` when there is
 nothing to add.) On macOS / Linux follow new-warp-chat's model-driven inline path
-(read the standing config's args the same way, compose the self-deleting tab command,
-write the config, fire the URI). **Never hand-assemble the Windows command line** -
+(resolve the args in the same order, compose the self-deleting tab command, write
+the config, fire the URI). **Never hand-assemble the Windows command line** -
 PowerShell 5.1 truncates a seed at its first `"`; the escaping lives in the launcher
 precisely so that bug cannot regress.
 
@@ -85,7 +87,7 @@ the file they were inherited from (the launcher prints both), and ask what opene
 ## Notes
 
 - The launcher's throwaway `breakout.toml` is distinct from the standing
-  `claude.toml` / `codex.toml` and their `-resume` variants in the same dir. It
+  `claude.toml` / `codex.toml` (and any `-resume` variants) in the same dir. It
   self-deletes, so no `breakout` entry lingers in Warp's `+` menu beyond a flicker.
 - New Warp tabs inherit the current tab's working directory, so a handoff that
   continues work lands in the same project for free.
@@ -93,7 +95,8 @@ the file they were inherited from (the launcher prints both), and ask what opene
   Claude, from Codex opens Codex. The Codex branch (`AI_AGENT` starting `codex`,
   seed as a positional prompt) mirrors the Claude path and has been verified
   against real Codex sessions.
-- This skill needs Warp running. The user's own standing Warp tab configs, when
-  they exist, hold a machine's launch flags: if a breakout comes up on the wrong
-  model or permission mode, fix the standing config, not this skill. It does not
+- This skill needs Warp running. The user's own config (the agent menu's
+  `agents.yaml`, else the standing Warp tab configs) holds a machine's launch
+  flags: if a breakout comes up on the wrong model or permission mode, fix that
+  config, not this skill. It does not
   detect or support other terminals.

@@ -11,15 +11,17 @@ seeded chats opened in new tabs of the running Warp terminal.
 | `shared-pane` | Opens one WezTerm window the user and the agent both drive: the user types the secret or approves the MFA push, the agent keeps working in the same authenticated shell. | WezTerm installed (set `WEZTERM_BIN` if it is not on PATH); a desktop session. |
 | `new-warp-chat` | Opens a new tab in the running Warp terminal that runs a given command, optionally with a seed prompt as its final argument. | Warp installed and running. |
 | `breakout` | Opens a fresh chat of the same CLI (Claude Code or Codex) in a new Warp tab, optionally seeded, through `new-warp-chat`. | Warp installed and running. |
+| `agent-menu` | Sets up one standing Warp tab per agent CLI that opens a menu: a fresh session in the home folder, a fresh or resumed session in a project, or the agent's resume list. Each agent's launch lines live in one per-user config file. | Warp installed; on Windows, an execution policy that allows local scripts. |
 
 ## Launch flags
 
 `new-warp-chat` and `breakout` read a CLI's launch flags from the user's own
-Warp tab configs (`<tab_configs>/<cmd>.toml`, and `<cmd>-resume.toml` for a
-resume) when they exist, so a permission mode or a model pin set there carries
-over to every new tab. With no such config the CLI is launched plain, with no
-extra flags (a resume keeps only what resume itself needs). Anything else is
-set in that tab config, or asked for explicitly for one launch.
+config, so a permission mode or a model pin set there carries over to every new
+tab: first the agent menu's `agents.yaml` (the CLI's `new` or `resume` line),
+then the user's standing Warp tab configs (`<tab_configs>/<cmd>.toml`, and
+`<cmd>-resume.toml` for a resume). With neither the CLI is launched plain, with
+no extra flags (a resume keeps only what resume itself needs). Anything else is
+set in that config, or asked for explicitly for one launch.
 
 ## Platform notes
 
@@ -31,6 +33,10 @@ set in that tab config, or asked for explicitly for one launch.
   if Warp is not running, the agent asks the user to open it. On Windows a
   bundled PowerShell helper does the launch; on macOS and Linux the agent
   composes it inline.
+- `agent-menu` writes its menu and config to a per-user folder outside the
+  plugin (`%LOCALAPPDATA%\agent-menu` on Windows,
+  `${XDG_CONFIG_HOME:-~/.config}/agent-menu` on macOS and Linux). The macOS and
+  Linux tab expects bash or zsh as the tab's shell.
 
 ## Install
 

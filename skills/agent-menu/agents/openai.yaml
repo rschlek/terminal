@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent menu"
+  short_description: "Set up Warp tabs that open a home / project / resume menu per agent"
+  default_prompt: "Set up the agent menu for my Warp tabs."

@@ -1,0 +1,7 @@
+# Warp tab config written by the agent-menu setup: opens the agent menu for {agent}.
+name = "{agent}"
+
+[[panes]]
+id = "main"
+type = "terminal"
+commands = ["& '{menu}' {agent}"]
