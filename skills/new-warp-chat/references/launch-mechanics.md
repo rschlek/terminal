@@ -89,7 +89,8 @@ use temp dirs).
 ## Windows helper: invocation and flags
 
 ```powershell
-& "${CLAUDE_PLUGIN_ROOT}/skills/new-warp-chat/scripts/new-warp-chat.ps1" `
+# $SkillDir = the absolute path of the new-warp-chat skill's folder (above references/)
+& "$SkillDir/scripts/new-warp-chat.ps1" `
     -TabName <name> -LaunchCmd <cmd> [-ExtraArgs '<additions>'] [-Resume] -SeedFile '<seed-file>'
 ```
 

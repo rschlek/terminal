@@ -43,7 +43,8 @@ A follow-up script needed root on the local box. The human typed only the sudo
 password; the agent did everything else in the same shell.
 
 ```sh
-P=${CLAUDE_PLUGIN_ROOT}/skills/shared-pane/scripts/pane.sh
+# SKILL_DIR = the absolute path of the shared-pane skill's folder (above references/)
+P="$SKILL_DIR/scripts/pane.sh"
 
 # 1. Open a pane whose title is the instruction.
 "$P" open root "ROOT STEPS - TYPE YOUR SUDO PASSWORD HERE"

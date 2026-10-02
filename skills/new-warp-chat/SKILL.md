@@ -63,7 +63,7 @@ override a flag. Parse rules and table: [reference](references/launch-mechanics.
 ## Windows - call the bundled helper (do not hand-assemble)
 
 PowerShell 5.1 truncates a hand-assembled seed at its first `"`, so run
-`${CLAUDE_PLUGIN_ROOT}/skills/new-warp-chat/scripts/new-warp-chat.ps1` and never
+`scripts/new-warp-chat.ps1` by absolute path (this skill's folder plus that) and never
 reimplement its escaping inline. Its invocation line, every flag (`-TabName`,
 `-LaunchCmd`, `-ExtraArgs`, `-LaunchArgs`, `-Resume`, `-SeedFile`) and what it
 escapes: [reference](references/launch-mechanics.md).
@@ -72,8 +72,9 @@ escapes: [reference](references/launch-mechanics.md).
 
 `"$(cat file)"` passes a seed verbatim in bash/zsh, so no helper is needed. Resolve
 the args by the same order as the helper: the agent menu's composed line if it has
-one (`bash ${CLAUDE_PLUGIN_ROOT}/skills/agent-menu/scripts/agent-menu.sh --print <cmd> new`,
-or `resume`), else the standing config's `commands` entry; either minus the leading
+one (`bash ../agent-menu/scripts/agent-menu.sh --print <cmd> new`, or `resume`: the
+sibling agent-menu skill's script in the same plugin, by absolute path from this
+skill's folder), else the standing config's `commands` entry; either minus the leading
 command name, verbatim, plus any extra args. Say which file they came from, and fall
 back to the reference's defaults table - saying so - only when neither exists. Then
 compose the tab command (no `$S` parts if no seed):

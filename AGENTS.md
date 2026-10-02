@@ -80,8 +80,8 @@ config files (the agent menu's `agents.yaml`, Warp's settings).
 ### Two harnesses, no hooks
 
 Every skill must work in Claude Code and Codex from the same `SKILL.md`. Refer
-to bundled files the way the skills already do, add no hooks, and keep skill
-bodies short and harness-neutral.
+to bundled files by paths relative to the skill's directory, add no hooks, and
+keep skill bodies short and harness-neutral.
 
 ### Checks
 
