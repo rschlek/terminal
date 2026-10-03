@@ -68,7 +68,13 @@ file, `WEZTERM_BIN` and the Windows calling form are in the reference and the
    pane and say what it shows), 4 means the window was closed.
 4. **Tell the human, in one plain line, exactly which window to type in** - the
    window title, verbatim, and what to type ("your sudo password", "your password
-   then approve the Duo push on your phone"). Then stop and let them.
+   then approve the Duo push on your phone"). Say that the window must stay
+   open until you close it: the command in the pane is what receives the
+   approval, so closing it early discards the login. Then stop and let them.
+   **A prompt that asks for no secret is yours to answer**: a "Press Enter to
+   open the browser" or a yes/no confirmation the user already agreed to gets a
+   `send` from you, not a wait on the human. A browser or device-code login
+   that stalls is usually sitting at exactly such a prompt.
 5. **`wait` for the post-auth marker** - a prompt string, a banner, a `DONE` the
    script echoes, whatever proves the auth landed. Give it a real budget (an MFA
    push can sit for a minute) and run long waits **in the background**, never
