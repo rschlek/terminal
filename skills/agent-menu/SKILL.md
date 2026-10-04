@@ -29,6 +29,8 @@ plus `scripts/...`; Windows: `scripts/setup.ps1`; macOS and Linux:
 To change flags, a model, or the projects root later, edit the config file;
 nothing else needs to change. An optional `new_project` line in an agent's block
 adds a `+ new project` row to the project view (the template has it commented
-out). Setup never rewrites an existing config, so add it by hand. Paths,
+out), and a top-level `start_in: projects_root` makes a fresh session in the
+projects root the menu's first, preselected entry, with Home kept below it.
+Setup never rewrites an existing config, so add either by hand. Paths,
 format, keys, and platform notes:
 [references/menu-details.md](references/menu-details.md).

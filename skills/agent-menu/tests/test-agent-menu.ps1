@@ -111,6 +111,19 @@ Report "menu-list-pinned-row" (($pinned.Count -eq 5) -and ($pinned[0] -ceq "+ ne
 $plain = @(& $menu claude -List)
 Report "menu-list-key-absent-unchanged" (($plain -join '|') -ceq ($rows -join '|')) ($plain -join ' | ')
 
+# The home screen's entries: start_in absent keeps home, project, resume; start_in:
+# projects_root puts a root entry first, only when the root exists.
+$out = (@(& $menu claude -Entries) | ForEach-Object { ($_ -split "`t")[0] }) -join ','
+Report "entries-default" ($out -ceq 'home,project,resume') $out
+$base = [System.IO.File]::ReadAllText($configPath)
+Write-Text $configPath ("start_in: projects_root`r`n" + $base)
+$e = @(& $menu claude -Entries)
+Report "entries-start-in-root" ((($e | ForEach-Object { ($_ -split "`t")[0] }) -join ',') -ceq 'root,home,project,resume' -and ($e[0] -ceq "root`t$root") -and ($e[1] -ceq "home`t$HOME")) ($e -join ' | ')
+Write-Text $configPath ("start_in: projects_root`r`nprojects_root: $(Join-Path $WorkDir 'nope')`r`n" + ($base -replace '(?m)^projects_root:.*$', ''))
+$out = (@(& $menu claude -Entries) | ForEach-Object { ($_ -split "`t")[0] }) -join ','
+Report "entries-start-in-missing-root" ($out -ceq 'home,project,resume') $out
+Write-Text $configPath $base
+
 # --- 5. Setup, against temp folders only.
 $tabs = $env:WARP_TAB_CONFIGS_DIR
 $env:AGENT_MENU_DIR = Join-Path $WorkDir "menu2"
@@ -134,6 +147,7 @@ Report "setup-check-reports-flags" (($msg -like "*launches 'codex' with flags: $
 $msg = (& $setup -CarryArgs -ProjectsRoot 'D:\fixture root') -join "`n"
 $cfg = Read-AgentConfig $newConfig
 Report "setup-created-config" ((Test-Path $newConfig) -and ((Get-ProjectsRoot $cfg) -ceq 'D:\fixture root')) $msg
+Report "setup-template-starts-home" (((Get-HomeEntries $cfg) | ForEach-Object { $_.Key }) -join ',' -ceq 'home,project,resume') ""
 Report "setup-carried-args" (((Get-AgentCommand $cfg 'codex' 'resume') -ceq "codex resume $quoted") -and ((Get-AgentCommand $cfg 'claude' 'new') -ceq 'claude --fixture-flag')) (Get-AgentCommand $cfg 'codex' 'resume')
 Report "setup-installed-scripts" ((Test-Path $installedMenu) -and (Test-Path (Join-Path $env:AGENT_MENU_DIR 'agent-config.ps1'))) ""
 $bytes = [System.IO.File]::ReadAllBytes((Join-Path $tabs 'claude.toml'))

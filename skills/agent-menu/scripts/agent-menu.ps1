@@ -15,6 +15,9 @@
     Home        the agent's `new` line, in the home folder
     Project...  the project view below
     Resume      the agent's `resume_all` line (else `resume`), in the home folder
+  With `start_in: projects_root` in the config and an existing projects root, a
+  first entry `Projects root` (the agent's `new` line, in projects_root) is added
+  and selected when the menu opens; Home stays as the second entry.
   Project view: the directories directly under projects_root, recently opened
   first. Type to filter, Up/Down, Enter launches `new` there, Tab toggles to
   `resume` there, Esc goes back. When the agent's block has a `new_project`
@@ -31,6 +34,8 @@
     -List                          print the project rows, tab-separated; with an
                                    agent whose block has `new_project`, the pinned
                                    `+ new project` row comes first
+    -Entries                       print the home screen's entries in order,
+                                   one `<key><TAB><folder>` row each
     -NoLaunch                      run the menu, print what it would run instead
 
 .EXAMPLE
@@ -41,6 +46,7 @@ param(
     [Parameter(Position = 0)][string]$Agent,                                           # the agent block to use, e.g. claude | codex
     [ValidateSet('new', 'resume', 'resume_all', 'new_project')][string]$Print,         # print the composed command line and stop
     [switch]$List,                                                                     # print the project rows and stop
+    [switch]$Entries,                                                                  # print the home screen's entries and stop
     [switch]$NoLaunch                                                                  # interactive, but print the launch instead of running it
 )
 $ErrorActionPreference = 'Stop'
@@ -71,6 +77,11 @@ if ($Print) {
     $line
     return
 }
+$homeEntries = Get-HomeEntries $config
+if ($Entries) {
+    foreach ($e in $homeEntries) { "{0}`t{1}" -f $e.Key, $e.Dir }
+    return
+}
 
 # --- Drawing. Each screen owns a fixed block of rows below the cursor and redraws
 # them in place; every row is padded to the window width so nothing wraps.
@@ -94,29 +105,32 @@ function Show-HomeMenu {
     $projectNote = 'pick a project, fresh session there (Tab there: resume)'
     if (-not $root) { $projectNote = "no projects root - set projects_root in $configPath" }
     elseif (-not (Test-Path -LiteralPath $root -PathType Container)) { $projectNote = "projects root $root not found - set projects_root in $configPath" }
-    $entries = @(
-        @{ Key = 'home';    Label = 'Home';       Note = "fresh session in $HOME" },
-        @{ Key = 'project'; Label = 'Project...'; Note = $projectNote },
-        @{ Key = 'resume';  Label = 'Resume';     Note = "the $Agent resume list" }
-    )
-    Open-Region ($entries.Count + 4)
+    $menuItems = @(foreach ($e in $homeEntries) {
+        switch ($e.Key) {
+            'root'    { @{ Key = 'root';    Label = 'Projects root'; Note = "fresh session in $root" } }
+            'home'    { @{ Key = 'home';    Label = 'Home';          Note = "fresh session in $HOME" } }
+            'project' { @{ Key = 'project'; Label = 'Project...';    Note = $projectNote } }
+            'resume'  { @{ Key = 'resume';  Label = 'Resume';        Note = "the $Agent resume list" } }
+        }
+    })
+    Open-Region ($menuItems.Count + 4)
     $sel = 0
     [Console]::CursorVisible = $false
     try {
         while ($true) {
             Write-Row 0 " $Agent" 'Cyan'
             Write-Row 1 ''
-            for ($i = 0; $i -lt $entries.Count; $i++) {
-                $text = '{0,-14} {1}' -f $entries[$i].Label, $entries[$i].Note
+            for ($i = 0; $i -lt $menuItems.Count; $i++) {
+                $text = '{0,-14} {1}' -f $menuItems[$i].Label, $menuItems[$i].Note
                 if ($i -eq $sel) { Write-Row (2 + $i) (" > $text") 'White' } else { Write-Row (2 + $i) ("   $text") 'DarkGray' }
             }
-            Write-Row ($entries.Count + 2) ''
-            Write-Row ($entries.Count + 3) ' Up/Down move   Enter select   Esc cancel' 'DarkGray'
+            Write-Row ($menuItems.Count + 2) ''
+            Write-Row ($menuItems.Count + 3) ' Up/Down move   Enter select   Esc cancel' 'DarkGray'
             $key = [Console]::ReadKey($true)
             if ($key.Key -eq 'UpArrow') { if ($sel -gt 0) { $sel-- } }
-            elseif ($key.Key -eq 'DownArrow') { if ($sel -lt $entries.Count - 1) { $sel++ } }
+            elseif ($key.Key -eq 'DownArrow') { if ($sel -lt $menuItems.Count - 1) { $sel++ } }
             elseif ($key.Key -eq 'Escape') { Close-Region; return $null }
-            elseif ($key.Key -eq 'Enter') { Close-Region; return $entries[$sel].Key }
+            elseif ($key.Key -eq 'Enter') { Close-Region; return $menuItems[$sel].Key }
         }
     } finally {
         [Console]::CursorVisible = $true
@@ -192,6 +206,7 @@ $launchMode = $null
 while ($true) {
     $pick = Show-HomeMenu
     if ($null -eq $pick) { return }
+    if ($pick -eq 'root') { $launchDir = $root; $launchMode = 'new'; break }
     if ($pick -eq 'home') { $launchDir = $HOME; $launchMode = 'new'; break }
     if ($pick -eq 'resume') { $launchDir = $HOME; $launchMode = 'resume_all'; break }
     if (-not $root -or -not (Test-Path -LiteralPath $root -PathType Container)) { continue }
