@@ -17,9 +17,12 @@
 #   agent-menu.sh --list [<agent>]           print the project rows: name TAB path TAB scope TAB summary
 #                                            (with an agent whose block has new_project, the
 #                                            pinned `+ new project` row comes first)
+#   agent-menu.sh --entries                  print the home screen's entries: key TAB folder
 #
 # Home screen: Home (`new` in $HOME), Project... (the project view), Resume (`resume_all`,
-# else `resume`, in $HOME). Project view: folders directly under projects_root, recently
+# else `resume`, in $HOME). With `start_in: projects_root` and an existing projects root, a
+# first entry Projects root (`new` in projects_root) is added and selected when the menu
+# opens; Home stays as the second entry. Project view: folders directly under projects_root, recently
 # opened first; type to filter, Up/Down, Enter = new there, Tab toggles resume, Esc = back.
 # When the agent's block has a `new_project` line, a pinned first row `+ new project` (new
 # mode only, never filtered out) runs that line in projects_root and records nothing.
@@ -81,6 +84,18 @@ projects_root() {
   case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
   case "$v" in '~') v="$HOME" ;; '~/'*) v="$HOME/${v#\~/}" ;; esac
   printf '%s\n' "$v"
+}
+
+# home_entries: the home screen's entries in order, one `key TAB folder` line each:
+# root (a fresh session in the projects root), home, project, resume. The root entry is
+# there only when `start_in: projects_root` is set and the root exists; it then comes
+# first, so it is the one selected when the menu opens.
+home_entries() {
+  local root start
+  root="$(projects_root)"
+  start="$(cfg_get "" start_in)" || start=""
+  if [ "$start" = projects_root ] && [ -n "$root" ] && [ -d "$root" ]; then printf 'root\t%s\n' "$root"; fi
+  printf 'home\t%s\nproject\t%s\nresume\t%s\n' "$HOME" "$root" "$HOME"
 }
 
 # agent_command <agent> <new|resume|resume_all|new_project>: the composed line, exit 1 when absent.
@@ -236,14 +251,25 @@ read_key() {
 }
 
 home_menu() {
-  local sel=0 i text note_p labels notes rows
+  local sel=0 i n text note_p keys=() labels=() notes=() rows line
   note_p="pick a project, fresh session there (Tab there: resume)"
   if [ -z "$ROOT" ]; then note_p="no projects root - set projects_root in $CONFIG"
   elif [ ! -d "$ROOT" ]; then note_p="projects root $ROOT not found - set projects_root in $CONFIG"; fi
-  labels=("Home" "Project..." "Resume"); notes=("fresh session in $HOME" "$note_p" "the $AGENT resume list")
+  while IFS= read -r line; do
+    keys+=("${line%%	*}")
+    case "${line%%	*}" in
+      root) labels+=("Projects root"); notes+=("fresh session in $ROOT") ;;
+      home) labels+=("Home"); notes+=("fresh session in $HOME") ;;
+      project) labels+=("Project..."); notes+=("$note_p") ;;
+      resume) labels+=("Resume"); notes+=("the $AGENT resume list") ;;
+    esac
+  done <<EOF
+$(home_entries)
+EOF
+  n=${#keys[@]}
   while :; do
     rows=(" $AGENT" "")
-    for i in 0 1 2; do
+    for ((i = 0; i < n; i++)); do
       text="$(printf '%-14s %s' "${labels[$i]}" "${notes[$i]}")"
       if [ "$i" = "$sel" ]; then rows+=(" > $text"); else rows+=("   $text"); fi
     done
@@ -252,9 +278,9 @@ home_menu() {
     read_key
     case "$KEY" in
       up) [ "$sel" -gt 0 ] && sel=$((sel - 1)) ;;
-      down) [ "$sel" -lt 2 ] && sel=$((sel + 1)) ;;
+      down) [ "$sel" -lt $((n - 1)) ] && sel=$((sel + 1)) ;;
       esc) clear_region; PICK=""; return ;;
-      enter) clear_region; case "$sel" in 0) PICK=home ;; 1) PICK=project ;; 2) PICK=resume ;; esac; return ;;
+      enter) clear_region; PICK="${keys[$sel]}"; return ;;
     esac
   done
 }
@@ -354,7 +380,8 @@ main() {
     --list)
       if [ -n "${2:-}" ] && has_new_project "$2"; then printf '%s\t%s\t\t\n' "$NEW_PROJECT_LABEL" "$(projects_root)"; fi
       list_projects "$(projects_root)"; return 0 ;;
-    ''|-*) echo "usage: agent-menu.sh <agent> | --print <agent> <mode> | --list [<agent>]" >&2; return 2 ;;
+    --entries) home_entries; return 0 ;;
+    ''|-*) echo "usage: agent-menu.sh <agent> | --print <agent> <mode> | --list [<agent>] | --entries" >&2; return 2 ;;
   esac
   AGENT="$1"; CONFIG="$(menu_dir)/agents.yaml"
   if [ ! -f "$CONFIG" ]; then echo "agent-menu: no config at $CONFIG - run the agent-menu setup" >&2; return 1; fi
@@ -373,6 +400,7 @@ main() {
     home_menu
     case "$PICK" in
       '') return 0 ;;
+      root) dir="$ROOT"; mode=new; break ;;
       home) dir="$HOME"; mode=new; break ;;
       resume) dir="$HOME"; mode=resume_all; break ;;
       project)

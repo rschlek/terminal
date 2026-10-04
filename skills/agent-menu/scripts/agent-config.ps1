@@ -19,6 +19,8 @@
   end of the line (trailing whitespace dropped). Quotes are kept and a # is part
   of the value - there are no inline comments. The one exception is
   projects_root, a path: surrounding quotes are removed and a leading ~ expands.
+  The optional top-level start_in (home | projects_root, default home) picks the
+  menu's first entry; see Get-HomeEntries.
 
   `{args}` in a block's command lines is replaced by the block's `args` value;
   when args is empty the placeholder and the spaces before it are removed, so
@@ -73,6 +75,24 @@ function Get-ProjectsRoot($Config) {
     }
     if ($v -eq '~' -or $v.StartsWith('~/') -or $v.StartsWith('~\')) { $v = $HOME + $v.Substring(1) }
     return $v
+}
+
+# --- The home screen's entries, in order, as @{ Key; Dir }: root (a fresh session in
+# the projects root), home, project, resume. The root entry is there only when
+# `start_in: projects_root` is set and the root exists; it then comes first, so it is
+# the one selected when the menu opens. Without the key the menu is home, project, resume.
+function Get-HomeEntries($Config) {
+    $root = Get-ProjectsRoot $Config
+    $entries = @()
+    $startIn = ''
+    if ($null -ne $Config -and $Config.Top.ContainsKey('start_in')) { $startIn = $Config.Top['start_in'].Trim() }
+    if ($startIn -eq 'projects_root' -and $root -and (Test-Path -LiteralPath $root -PathType Container)) {
+        $entries += @{ Key = 'root'; Dir = $root }
+    }
+    $entries += @{ Key = 'home'; Dir = $HOME }
+    $entries += @{ Key = 'project'; Dir = $root }
+    $entries += @{ Key = 'resume'; Dir = $HOME }
+    return , $entries
 }
 
 # --- The composed command line for one agent and mode (new | resume | resume_all),
