@@ -30,7 +30,9 @@ To change flags, a model, or the projects root later, edit the config file;
 nothing else needs to change. An optional `new_project` line in an agent's block
 adds a `+ new project` row to the project view (the template has it commented
 out), and a top-level `start_in: projects_root` makes a fresh session in the
-projects root the menu's first, preselected entry, with Home kept below it.
-Setup never rewrites an existing config, so add either by hand. Paths,
-format, keys, and platform notes:
+projects root the menu's first, preselected entry, with Home kept below it,
+and opens Resume there too, since an agent's resume list shows only the
+sessions of the folder it opens in; the list can be widened to all folders
+from inside it. Setup never rewrites an existing config, so add either by
+hand. Paths, format, keys, and platform notes:
 [references/menu-details.md](references/menu-details.md).

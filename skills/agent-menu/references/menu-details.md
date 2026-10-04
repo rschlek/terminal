@@ -57,8 +57,8 @@ Flat on purpose, so both scripts read it line by line with no YAML library:
 - `projects_root` is a path: surrounding quotes are removed and a leading `~`
   expands to the home folder.
 - `start_in` (optional, top level): `home` (the default) or `projects_root`,
-  which adds a **Projects root** entry first on the home screen (see the menu
-  below).
+  which adds a **Projects root** entry first on the home screen and opens
+  **Resume** in the projects root (see the menu below).
 - Block keys: `new` (default `<name> {args}`), `resume`, `resume_all`
   (falls back to `resume`), and the optional `new_project` (no default; see
   the project view). Any block name works as an agent name.
@@ -77,8 +77,13 @@ The tab config runs the menu with one argument, the agent's block name.
 - With `start_in: projects_root` and an existing `projects_root`, the home
   screen starts with **Projects root**, which runs `new` in `projects_root`
   itself and records nothing in `recent.tsv`. It is selected when the menu
-  opens, so Enter alone starts a session there; Home, Project... and Resume
-  follow unchanged. If the root is missing the entry is left out.
+  opens, so Enter alone starts a session there; Home and Project... follow
+  unchanged. **Resume** then opens in `projects_root` instead of the home
+  folder: an agent's resume list shows only the sessions started in the folder
+  it opens in, so it opens where the menu's default sessions start. The list
+  itself can be widened to all folders from inside it. Resuming inside one
+  project (Tab in the project view) is unchanged. If the root is missing the
+  entry is left out and Resume stays in the home folder.
 - Project view: the folders directly under `projects_root` (dot-folders
   skipped), recently opened first, then the rest alphabetically. Each row shows
   the folder name and, from a `project.yaml` in it, `scope` and `summary`
@@ -103,7 +108,8 @@ Non-interactive modes, for checking a config edit:
 `agent-menu.ps1 <agent> -Print new|resume|resume_all|new_project`,
 `agent-menu.ps1 [<agent>] -List` (with an agent whose block has `new_project`,
 the pinned row comes first), `agent-menu.ps1 <agent> -Entries` (the home
-screen's entries in order, `<key><TAB><folder>`), `agent-menu.ps1 <agent>
+screen's entries in order, `<key><TAB><folder>`; the `resume` row's folder is
+where Resume opens), `agent-menu.ps1 <agent>
 -NoLaunch` (runs the menu, prints instead of launching);
 `agent-menu.sh --print <agent> <mode>`, `agent-menu.sh --list [<agent>]`,
 `agent-menu.sh --entries`.
@@ -142,7 +148,7 @@ by setup, which can carry those flags into the new config's `args`.
 `tests/test-agent-menu.sh` (bash; also runs under Git Bash) cover the config
 reader (including a quoted `--config` value round-tripping verbatim and
 `{args}` substitution), `project.yaml` fields, listing and sort order, the
-recent file, the home screen's entries with and without `start_in`, the menu's non-interactive modes, and setup against temp folders.
+recent file, the home screen's entries and Resume's folder with and without `start_in`, the menu's non-interactive modes, and setup against temp folders.
 The bash test also scripts whole menu sessions by feeding keys from a file
 (`AGENT_MENU_TTY_IN` / `AGENT_MENU_TTY_OUT`, test-only) and evaluates the
 printed line. The PowerShell key loop needs a real console and is not covered.

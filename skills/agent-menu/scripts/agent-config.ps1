@@ -20,7 +20,7 @@
   of the value - there are no inline comments. The one exception is
   projects_root, a path: surrounding quotes are removed and a leading ~ expands.
   The optional top-level start_in (home | projects_root, default home) picks the
-  menu's first entry; see Get-HomeEntries.
+  menu's first entry and the folder Resume opens in; see Get-HomeEntries.
 
   `{args}` in a block's command lines is replaced by the block's `args` value;
   when args is empty the placeholder and the spaces before it are removed, so
@@ -80,18 +80,22 @@ function Get-ProjectsRoot($Config) {
 # --- The home screen's entries, in order, as @{ Key; Dir }: root (a fresh session in
 # the projects root), home, project, resume. The root entry is there only when
 # `start_in: projects_root` is set and the root exists; it then comes first, so it is
-# the one selected when the menu opens. Without the key the menu is home, project, resume.
+# the one selected when the menu opens, and resume opens in the projects root too, where
+# those sessions were started. Without the key the menu is home, project, resume, with
+# resume in the home folder.
 function Get-HomeEntries($Config) {
     $root = Get-ProjectsRoot $Config
     $entries = @()
+    $resumeDir = $HOME
     $startIn = ''
     if ($null -ne $Config -and $Config.Top.ContainsKey('start_in')) { $startIn = $Config.Top['start_in'].Trim() }
     if ($startIn -eq 'projects_root' -and $root -and (Test-Path -LiteralPath $root -PathType Container)) {
         $entries += @{ Key = 'root'; Dir = $root }
+        $resumeDir = $root
     }
     $entries += @{ Key = 'home'; Dir = $HOME }
     $entries += @{ Key = 'project'; Dir = $root }
-    $entries += @{ Key = 'resume'; Dir = $HOME }
+    $entries += @{ Key = 'resume'; Dir = $resumeDir }
     return , $entries
 }
 
