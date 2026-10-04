@@ -15,9 +15,11 @@
     Home        the agent's `new` line, in the home folder
     Project...  the project view below
     Resume      the agent's `resume_all` line (else `resume`), in the home folder
+                (in projects_root with `start_in: projects_root`, below)
   With `start_in: projects_root` in the config and an existing projects root, a
   first entry `Projects root` (the agent's `new` line, in projects_root) is added
-  and selected when the menu opens; Home stays as the second entry.
+  and selected when the menu opens; Home stays as the second entry, and Resume
+  opens in projects_root instead of the home folder.
   Project view: the directories directly under projects_root, recently opened
   first. Type to filter, Up/Down, Enter launches `new` there, Tab toggles to
   `resume` there, Esc goes back. When the agent's block has a `new_project`
@@ -103,6 +105,7 @@ function Close-Region {
 
 function Show-HomeMenu {
     $projectNote = 'pick a project, fresh session there (Tab there: resume)'
+    $resumeDir = ($homeEntries | Where-Object { $_.Key -eq 'resume' }).Dir
     if (-not $root) { $projectNote = "no projects root - set projects_root in $configPath" }
     elseif (-not (Test-Path -LiteralPath $root -PathType Container)) { $projectNote = "projects root $root not found - set projects_root in $configPath" }
     $menuItems = @(foreach ($e in $homeEntries) {
@@ -110,7 +113,7 @@ function Show-HomeMenu {
             'root'    { @{ Key = 'root';    Label = 'Projects root'; Note = "fresh session in $root" } }
             'home'    { @{ Key = 'home';    Label = 'Home';          Note = "fresh session in $HOME" } }
             'project' { @{ Key = 'project'; Label = 'Project...';    Note = $projectNote } }
-            'resume'  { @{ Key = 'resume';  Label = 'Resume';        Note = "the $Agent resume list" } }
+            'resume'  { @{ Key = 'resume';  Label = 'Resume';        Note = "the $Agent resume list in $resumeDir" } }
         }
     })
     Open-Region ($menuItems.Count + 4)
@@ -208,7 +211,7 @@ while ($true) {
     if ($null -eq $pick) { return }
     if ($pick -eq 'root') { $launchDir = $root; $launchMode = 'new'; break }
     if ($pick -eq 'home') { $launchDir = $HOME; $launchMode = 'new'; break }
-    if ($pick -eq 'resume') { $launchDir = $HOME; $launchMode = 'resume_all'; break }
+    if ($pick -eq 'resume') { $launchDir = ($homeEntries | Where-Object { $_.Key -eq 'resume' }).Dir; $launchMode = 'resume_all'; break }
     if (-not $root -or -not (Test-Path -LiteralPath $root -PathType Container)) { continue }
     $projects = Get-ProjectList $root
     if ($projects.Count -eq 0 -and -not $hasNewProject) { continue }

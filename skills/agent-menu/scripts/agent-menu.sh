@@ -22,7 +22,7 @@
 # Home screen: Home (`new` in $HOME), Project... (the project view), Resume (`resume_all`,
 # else `resume`, in $HOME). With `start_in: projects_root` and an existing projects root, a
 # first entry Projects root (`new` in projects_root) is added and selected when the menu
-# opens; Home stays as the second entry. Project view: folders directly under projects_root, recently
+# opens; Home stays as the second entry, and Resume opens in projects_root instead of $HOME. Project view: folders directly under projects_root, recently
 # opened first; type to filter, Up/Down, Enter = new there, Tab toggles resume, Esc = back.
 # When the agent's block has a `new_project` line, a pinned first row `+ new project` (new
 # mode only, never filtered out) runs that line in projects_root and records nothing.
@@ -89,13 +89,14 @@ projects_root() {
 # home_entries: the home screen's entries in order, one `key TAB folder` line each:
 # root (a fresh session in the projects root), home, project, resume. The root entry is
 # there only when `start_in: projects_root` is set and the root exists; it then comes
-# first, so it is the one selected when the menu opens.
+# first, so it is the one selected when the menu opens, and resume opens in the projects
+# root too, where those sessions were started. Otherwise resume opens in $HOME.
 home_entries() {
-  local root start
+  local root start resume_dir="$HOME"
   root="$(projects_root)"
   start="$(cfg_get "" start_in)" || start=""
-  if [ "$start" = projects_root ] && [ -n "$root" ] && [ -d "$root" ]; then printf 'root\t%s\n' "$root"; fi
-  printf 'home\t%s\nproject\t%s\nresume\t%s\n' "$HOME" "$root" "$HOME"
+  if [ "$start" = projects_root ] && [ -n "$root" ] && [ -d "$root" ]; then printf 'root\t%s\n' "$root"; resume_dir="$root"; fi
+  printf 'home\t%s\nproject\t%s\nresume\t%s\n' "$HOME" "$root" "$resume_dir"
 }
 
 # agent_command <agent> <new|resume|resume_all|new_project>: the composed line, exit 1 when absent.
@@ -261,7 +262,7 @@ home_menu() {
       root) labels+=("Projects root"); notes+=("fresh session in $ROOT") ;;
       home) labels+=("Home"); notes+=("fresh session in $HOME") ;;
       project) labels+=("Project..."); notes+=("$note_p") ;;
-      resume) labels+=("Resume"); notes+=("the $AGENT resume list") ;;
+      resume) labels+=("Resume"); notes+=("the $AGENT resume list in ${line#*	}") ;;
     esac
   done <<EOF
 $(home_entries)
@@ -402,7 +403,7 @@ main() {
       '') return 0 ;;
       root) dir="$ROOT"; mode=new; break ;;
       home) dir="$HOME"; mode=new; break ;;
-      resume) dir="$HOME"; mode=resume_all; break ;;
+      resume) dir="$(home_entries | sed -n 's/^resume	//p')"; mode=resume_all; break ;;
       project)
         [ -n "$ROOT" ] && [ -d "$ROOT" ] || continue
         [ -n "$(list_projects "$ROOT")" ] || [ "$HAS_NP" = 1 ] || continue

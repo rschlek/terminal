@@ -126,18 +126,20 @@ check session-no-row-without-key "no" "$(grep -qF '+ new project' "$work/screen"
 # An empty projects root: the view still opens, with the pinned row selected.
 mkdir -p "$work/empty-root" "$work/menu-empty"
 printf 'projects_root: %s\nnp:\n  new_project: np {args} new\n' "$work/empty-root" > "$work/menu-empty/agents.yaml"
-# start_in: projects_root adds a first, preselected Projects root entry; Home moves down one.
+# start_in: projects_root adds a first, preselected Projects root entry; Home moves down one
+# and Resume opens in the projects root instead of the home folder.
 check entries-default "home,project,resume" "$(bash "$scripts/agent-menu.sh" --entries | cut -f1 | paste -sd,)"
+check entries-default-resume-home "resume	$HOME" "$(bash "$scripts/agent-menu.sh" --entries | grep '^resume')"
 cp "$AGENT_MENU_DIR/agents.yaml" "$work/agents.base"
 { echo "start_in: projects_root"; cat "$work/agents.base"; } > "$AGENT_MENU_DIR/agents.yaml"
-check entries-start-in-root "root	$root|home	$HOME|project	$root|resume	$HOME" "$(bash "$scripts/agent-menu.sh" --entries | paste -sd'|')"
+check entries-start-in-root "root	$root|home	$HOME|project	$root|resume	$root" "$(bash "$scripts/agent-menu.sh" --entries | paste -sd'|')"
 check session-root-default "cd -- '$root' && claude --fixture-flag" "$(session claude "$ENTER")"
 check session-root-screen "yes" "$(grep -qF '> Projects root' "$work/screen" && echo yes || echo no)"
 check session-root-home "cd -- '$HOME' && claude --fixture-flag" "$(session claude "$DOWN$ENTER")"
-check session-root-resume "cd -- '$HOME' && codex resume --all $quoted" "$(session codex "$DOWN$DOWN$DOWN$ENTER")"
+check session-root-resume "cd -- '$root' && codex resume --all $quoted" "$(session codex "$DOWN$DOWN$DOWN$ENTER")"
 check session-root-project "cd -- '$root/gamma' && codex $quoted" "$(session codex "${DOWN}${DOWN}${ENTER}gam${ENTER}")"
 { echo "start_in: projects_root"; echo "projects_root: $work/nope"; grep -v '^projects_root:' "$work/agents.base"; } > "$AGENT_MENU_DIR/agents.yaml"
-check entries-start-in-missing-root "home,project,resume" "$(bash "$scripts/agent-menu.sh" --entries | cut -f1 | paste -sd,)"
+check entries-start-in-missing-root "home,project,resume|resume	$HOME" "$(bash "$scripts/agent-menu.sh" --entries | cut -f1 | paste -sd,)|$(bash "$scripts/agent-menu.sh" --entries | grep '^resume')"
 cp "$work/agents.base" "$AGENT_MENU_DIR/agents.yaml"
 check session-new-project-empty-root "cd -- '$work/empty-root' && np new" "$(AGENT_MENU_DIR="$work/menu-empty" session np "${DOWN}${ENTER}${ENTER}")"
 

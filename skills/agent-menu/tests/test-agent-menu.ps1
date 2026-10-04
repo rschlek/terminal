@@ -112,16 +112,19 @@ $plain = @(& $menu claude -List)
 Report "menu-list-key-absent-unchanged" (($plain -join '|') -ceq ($rows -join '|')) ($plain -join ' | ')
 
 # The home screen's entries: start_in absent keeps home, project, resume; start_in:
-# projects_root puts a root entry first, only when the root exists.
+# projects_root puts a root entry first and opens Resume in the root, only when the root exists.
 $out = (@(& $menu claude -Entries) | ForEach-Object { ($_ -split "`t")[0] }) -join ','
 Report "entries-default" ($out -ceq 'home,project,resume') $out
+$r = @(& $menu claude -Entries)[-1]
+Report "entries-default-resume-home" ($r -ceq "resume`t$HOME") $r
 $base = [System.IO.File]::ReadAllText($configPath)
 Write-Text $configPath ("start_in: projects_root`r`n" + $base)
 $e = @(& $menu claude -Entries)
-Report "entries-start-in-root" ((($e | ForEach-Object { ($_ -split "`t")[0] }) -join ',') -ceq 'root,home,project,resume' -and ($e[0] -ceq "root`t$root") -and ($e[1] -ceq "home`t$HOME")) ($e -join ' | ')
+Report "entries-start-in-root" ((($e | ForEach-Object { ($_ -split "`t")[0] }) -join ',') -ceq 'root,home,project,resume' -and ($e[0] -ceq "root`t$root") -and ($e[1] -ceq "home`t$HOME") -and ($e[3] -ceq "resume`t$root")) ($e -join ' | ')
 Write-Text $configPath ("start_in: projects_root`r`nprojects_root: $(Join-Path $WorkDir 'nope')`r`n" + ($base -replace '(?m)^projects_root:.*$', ''))
 $out = (@(& $menu claude -Entries) | ForEach-Object { ($_ -split "`t")[0] }) -join ','
-Report "entries-start-in-missing-root" ($out -ceq 'home,project,resume') $out
+$r = @(& $menu claude -Entries)[-1]
+Report "entries-start-in-missing-root" (($out -ceq 'home,project,resume') -and ($r -ceq "resume`t$HOME")) "$out | $r"
 Write-Text $configPath $base
 
 # --- 5. Setup, against temp folders only.
