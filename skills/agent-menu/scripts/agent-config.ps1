@@ -77,25 +77,30 @@ function Get-ProjectsRoot($Config) {
     return $v
 }
 
-# --- The home screen's entries, in order, as @{ Key; Dir }: root (a fresh session in
-# the projects root), home, project, resume. The root entry is there only when
-# `start_in: projects_root` is set and the root exists; it then comes first, so it is
-# the one selected when the menu opens, and resume opens in the projects root too, where
-# those sessions were started. Without the key the menu is home, project, resume, with
-# resume in the home folder.
+# --- The home screen's entries, in order, as @{ Key; Dir }. Without `start_in:
+# projects_root` the menu is home, project, resume, with resume in the home folder.
+# With the key set and an existing projects root it is root (a fresh session in the
+# projects root), project, resume, home: everything in the projects root together and
+# home last. Root comes first, so it is the one selected when the menu opens, and resume
+# opens in the projects root too, where those sessions were started.
 function Get-HomeEntries($Config) {
     $root = Get-ProjectsRoot $Config
-    $entries = @()
-    $resumeDir = $HOME
     $startIn = ''
     if ($null -ne $Config -and $Config.Top.ContainsKey('start_in')) { $startIn = $Config.Top['start_in'].Trim() }
     if ($startIn -eq 'projects_root' -and $root -and (Test-Path -LiteralPath $root -PathType Container)) {
-        $entries += @{ Key = 'root'; Dir = $root }
-        $resumeDir = $root
+        $entries = @(
+            @{ Key = 'root'; Dir = $root },
+            @{ Key = 'project'; Dir = $root },
+            @{ Key = 'resume'; Dir = $root },
+            @{ Key = 'home'; Dir = $HOME }
+        )
+    } else {
+        $entries = @(
+            @{ Key = 'home'; Dir = $HOME },
+            @{ Key = 'project'; Dir = $root },
+            @{ Key = 'resume'; Dir = $HOME }
+        )
     }
-    $entries += @{ Key = 'home'; Dir = $HOME }
-    $entries += @{ Key = 'project'; Dir = $root }
-    $entries += @{ Key = 'resume'; Dir = $resumeDir }
     return , $entries
 }
 

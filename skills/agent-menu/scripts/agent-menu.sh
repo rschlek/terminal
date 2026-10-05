@@ -20,10 +20,10 @@
 #   agent-menu.sh --entries                  print the home screen's entries: key TAB folder
 #
 # Home screen: Home (`new` in $HOME), Project... (the project view), Resume (`resume_all`,
-# else `resume`, in $HOME). With `start_in: projects_root` and an existing projects root, a
-# first entry Projects root (`new` in projects_root) is added and selected when the menu
-# opens; Home stays as the second entry, and Resume opens in projects_root instead of $HOME. Project view: folders directly under projects_root, recently
-# opened first; type to filter, Up/Down, Enter = new there, Tab toggles resume, Esc = back.
+# else `resume`, in $HOME). With `start_in: projects_root` and an existing projects root,
+# the order is Projects root (`new` in projects_root, selected when the menu opens),
+# Project..., Resume (in projects_root instead of $HOME), Home last. Project view: folders
+# directly under projects_root, recently opened first; type to filter, Up/Down, Enter = new there, Tab toggles resume, Esc = back.
 # When the agent's block has a `new_project` line, a pinned first row `+ new project` (new
 # mode only, never filtered out) runs that line in projects_root and records nothing.
 #
@@ -86,17 +86,21 @@ projects_root() {
   printf '%s\n' "$v"
 }
 
-# home_entries: the home screen's entries in order, one `key TAB folder` line each:
-# root (a fresh session in the projects root), home, project, resume. The root entry is
-# there only when `start_in: projects_root` is set and the root exists; it then comes
-# first, so it is the one selected when the menu opens, and resume opens in the projects
-# root too, where those sessions were started. Otherwise resume opens in $HOME.
+# home_entries: the home screen's entries in order, one `key TAB folder` line each.
+# Without `start_in: projects_root` the menu is home, project, resume, with resume in
+# $HOME. With the key set and an existing projects root it is root (a fresh session in the
+# projects root), project, resume, home: everything in the projects root together and home
+# last. Root comes first, so it is the one selected when the menu opens, and resume opens
+# in the projects root too, where those sessions were started.
 home_entries() {
-  local root start resume_dir="$HOME"
+  local root start
   root="$(projects_root)"
   start="$(cfg_get "" start_in)" || start=""
-  if [ "$start" = projects_root ] && [ -n "$root" ] && [ -d "$root" ]; then printf 'root\t%s\n' "$root"; resume_dir="$root"; fi
-  printf 'home\t%s\nproject\t%s\nresume\t%s\n' "$HOME" "$root" "$resume_dir"
+  if [ "$start" = projects_root ] && [ -n "$root" ] && [ -d "$root" ]; then
+    printf 'root\t%s\nproject\t%s\nresume\t%s\nhome\t%s\n' "$root" "$root" "$root" "$HOME"
+  else
+    printf 'home\t%s\nproject\t%s\nresume\t%s\n' "$HOME" "$root" "$HOME"
+  fi
 }
 
 # agent_command <agent> <new|resume|resume_all|new_project>: the composed line, exit 1 when absent.
