@@ -15,8 +15,8 @@
 projects_root:
 
 # The menu's first entry: home (a fresh session in the home folder) or
-# projects_root (a fresh session in projects_root, with Home kept below it;
-# Resume then opens in projects_root too).
+# projects_root (a fresh session in projects_root, then Project... and Resume,
+# with Home moved to the end; Resume then opens in projects_root too).
 start_in: home
 
 claude:

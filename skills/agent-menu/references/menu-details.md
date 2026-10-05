@@ -57,8 +57,9 @@ Flat on purpose, so both scripts read it line by line with no YAML library:
 - `projects_root` is a path: surrounding quotes are removed and a leading `~`
   expands to the home folder.
 - `start_in` (optional, top level): `home` (the default) or `projects_root`,
-  which adds a **Projects root** entry first on the home screen and opens
-  **Resume** in the projects root (see the menu below).
+  which adds a **Projects root** entry first on the home screen, moves
+  **Home** to the end, and opens **Resume** in the projects root (see the menu
+  below).
 - Block keys: `new` (default `<name> {args}`), `resume`, `resume_all`
   (falls back to `resume`), and the optional `new_project` (no default; see
   the project view). Any block name works as an agent name.
@@ -77,8 +78,10 @@ The tab config runs the menu with one argument, the agent's block name.
 - With `start_in: projects_root` and an existing `projects_root`, the home
   screen starts with **Projects root**, which runs `new` in `projects_root`
   itself and records nothing in `recent.tsv`. It is selected when the menu
-  opens, so Enter alone starts a session there; Home and Project... follow
-  unchanged. **Resume** then opens in `projects_root` instead of the home
+  opens, so Enter alone starts a session there. The order is then
+  **Projects root**, **Project...**, **Resume**, **Home**: the entries that
+  work in the projects root come together and Home moves to the end.
+  **Resume** opens in `projects_root` instead of the home
   folder: an agent's resume list shows only the sessions started in the folder
   it opens in, so it opens where the menu's default sessions start. The list
   itself can be widened to all folders from inside it. Resuming inside one

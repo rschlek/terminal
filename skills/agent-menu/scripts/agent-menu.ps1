@@ -18,8 +18,9 @@
                 (in projects_root with `start_in: projects_root`, below)
   With `start_in: projects_root` in the config and an existing projects root, a
   first entry `Projects root` (the agent's `new` line, in projects_root) is added
-  and selected when the menu opens; Home stays as the second entry, and Resume
-  opens in projects_root instead of the home folder.
+  and selected when the menu opens, and the order becomes Projects root,
+  Project..., Resume, Home: everything in projects_root together, Home last.
+  Resume then opens in projects_root instead of the home folder.
   Project view: the directories directly under projects_root, recently opened
   first. Type to filter, Up/Down, Enter launches `new` there, Tab toggles to
   `resume` there, Esc goes back. When the agent's block has a `new_project`
