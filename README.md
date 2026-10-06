@@ -12,10 +12,10 @@ it.
 | --- | --- | --- |
 | `shared-pane` | Opens one WezTerm window the user and the agent both drive: the user types the secret or approves the MFA push, the agent keeps working in the same authenticated shell. | WezTerm installed (set `WEZTERM_BIN` if it is not on PATH); a desktop session. |
 | `new-warp-chat` | Opens a new tab in the running Warp terminal that runs a given command, optionally with a seed prompt as its final argument. | Warp installed and running. |
-| `breakout` | Opens a fresh chat of the same CLI (Claude Code or Codex) in a new Warp tab, optionally seeded, through `new-warp-chat`. | Warp installed and running. |
+| `breakout` | Opens a fresh chat of the same CLI (Claude Code or Codex) in a new Warp tab, optionally seeded and optionally started in another folder, through `new-warp-chat`. | Warp installed and running. |
 | `warp-setup` | Applies the plugin's default Warp look (theme, font sizes, zoom, vertical tabs, Warp AI and Warp Drive off) by merging it into `settings.toml`, sets up the agent tabs through `agent-menu`, and makes the `claude` tab the default new tab; on Windows it also turns off Warp's own Git prompt probes. The look is a default the user can change. | Warp installed and onboarded. |
 | `wezterm-setup` | Installs WezTerm if needed, reconciles a minimal managed block into the user's WezTerm config, and verifies `shared-pane` can drive a WezTerm window. | A desktop session; admin rights for the native package (Linux has a no-admin route). |
-| `agent-menu` | Sets up one standing Warp tab per agent CLI that opens a menu: a fresh session in the home folder, a fresh or resumed session in a project, or the agent's resume list. Each agent's launch lines live in one per-user config file. | Warp installed; on Windows, an execution policy that allows local scripts. |
+| `agent-menu` | Sets up one standing Warp tab per agent CLI that opens a menu: a fresh session in the home folder, a fresh or resumed session in a project, or a resume list (for Claude Code, past chats from every folder, reopened where they started or in another project). Each agent's launch lines live in one per-user config file; the installed menu refreshes itself when the plugin is updated. | Warp installed; on Windows, an execution policy that allows local scripts. |
 
 ## Launch flags
 
