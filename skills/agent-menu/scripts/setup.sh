@@ -7,6 +7,8 @@
 #   2. creates $AGENT_MENU_DIR/agents.yaml from the template ONLY when it does not exist;
 #   3. writes <tab_configs>/<agent>.toml for each agent, running the menu; a replaced tab
 #      config is first copied to $AGENT_MENU_DIR/backup/;
+#   (1 also records the plugin folder and version in plugin-source.txt next to the menu,
+#   so the menu can refresh itself when the plugin is updated.)
 #   4. reports any <agent>-resume.toml as redundant - it never deletes one.
 #
 #   setup.sh [--check] [--carry-args] [--agent-args 'name=<args>']... [--projects-root <dir>]
@@ -136,6 +138,12 @@ if [ "$check" = 1 ]; then say "check only - nothing changed"; exit 0; fi
 mkdir -p "$mdir"
 cp -f "$here/agent-menu.sh" "$menu.tmp.$$" && mv -f "$menu.tmp.$$" "$menu"
 say "installed the menu at $menu"
+# The record the menu refreshes itself from when the plugin is updated.
+plugin_root="$(cd "$skill/../.." && pwd)"
+if pv="$(manifest_field "$plugin_root" version)"; then
+  write_source_record "$mdir" "$plugin_root" "$(manifest_field "$plugin_root" name || true)" "$pv"
+  say "recorded the plugin source ($pv) in $mdir/plugin-source.txt; the menu refreshes itself from newer versions"
+fi
 
 # 2. The config, only when absent.
 if [ ! -f "$config" ]; then

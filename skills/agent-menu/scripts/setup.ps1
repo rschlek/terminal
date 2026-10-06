@@ -7,7 +7,9 @@
   Safe to re-run. It:
     1. copies agent-menu.ps1 and agent-config.ps1 to <AGENT_MENU_DIR> (refreshed
        every run; AGENT_MENU_DIR defaults to %LOCALAPPDATA%\agent-menu), so the
-       tab configs never point into the versioned plugin directory;
+       tab configs never point into the versioned plugin directory, and records
+       the plugin folder and version in plugin-source.txt there, so the menu can
+       refresh itself when the plugin is updated;
     2. creates <AGENT_MENU_DIR>\agents.yaml from the template ONLY when it does not
        exist - an existing config is never touched;
     3. writes <tab_configs>\<agent>.toml for each agent, running the menu; a
@@ -133,6 +135,13 @@ foreach ($f in @('agent-menu.ps1', 'agent-config.ps1')) {
     Copy-Item -LiteralPath (Join-Path $PSScriptRoot $f) -Destination (Join-Path $menuDir $f) -Force
 }
 Say "installed the menu at $menuPath"
+# The record the menu refreshes itself from when the plugin is updated.
+$pluginRoot = Split-Path -Parent (Split-Path -Parent $skillDir)
+$manifest = Get-PluginManifest $pluginRoot
+if ($null -ne $manifest) {
+    Write-PluginSourceRecord $menuDir $pluginRoot $manifest.Name $manifest.Version
+    Say "recorded the plugin source ($($manifest.Version)) in $(Join-Path $menuDir 'plugin-source.txt'); the menu refreshes itself from newer versions"
+}
 
 # --- 2. The config, only when absent.
 if (-not $configExists) {

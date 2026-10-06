@@ -13,6 +13,7 @@ scripts="$here/../scripts"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 export HOME="$work/home" AGENT_MENU_DIR="$work/menu" WARP_TAB_CONFIGS_DIR="$work/tab_configs"
+unset CLAUDE_CONFIG_DIR AGENT_MENU_TEMP_DIR AGENT_MENU_REFRESHED
 mkdir -p "$HOME" "$AGENT_MENU_DIR" "$WARP_TAB_CONFIGS_DIR"
 # shellcheck source=../scripts/agent-menu.sh
 . "$scripts/agent-menu.sh"
@@ -143,6 +144,76 @@ check entries-start-in-missing-root "home,project,resume|resume	$HOME" "$(bash "
 cp "$work/agents.base" "$AGENT_MENU_DIR/agents.yaml"
 check session-new-project-empty-root "cd -- '$work/empty-root' && np new" "$(AGENT_MENU_DIR="$work/menu-empty" session np "${DOWN}${ENTER}${ENTER}")"
 
+# --- 4b. The session list: fake Claude Code session files in a temp config dir. The temp
+# folder check is pointed at a fixture folder, since the whole test lives in a temp dir.
+export CLAUDE_CONFIG_DIR="$work/claude" AGENT_MENU_TEMP_DIR="$work/fake-temp"
+P="$CLAUDE_CONFIG_DIR/projects"
+mkdir -p "$work/fake-temp/x"
+jesc() { local s="${1//\\/\\\\}"; printf '%s' "${s//\"/\\\"}"; }
+sess() { # sess <folder> <id> <touch-stamp> <line>...: one session file, newline after each line
+  local d="$P/$1" id="$2" t="$3"; shift 3
+  mkdir -p "$d"; printf '%s\n' "$@" > "$d/$id.jsonl"; touch -t "$t" "$d/$id.jsonl"
+}
+uline() { # uline <cwd> <content-json> [branch]: a user line carrying the folder
+  printf '{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":%s},"uuid":"u1","cwd":"%s","sessionId":"x","version":"2.1.290","gitBranch":"%s"}' "$2" "$(jesc "$1")" "${3:-}"
+}
+mline() { printf '{"type":"mode","mode":"normal","sessionId":"x"}'; }
+aline() { printf '{"parentUuid":"u1","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]},"cwd":"%s","sessionId":"x"}' "$(jesc "$1")"; }
+long="01234567890123456789012345678901234567890123456789012345678901234567890123456789"
+sess f-alpha s-ai 202601010900 "$(mline)" "$(uline "$root/alpha" '"first prompt"' feature/x)" "$(aline "$root/alpha")" \
+  '{"type":"ai-title","aiTitle":"Old title","sessionId":"x"}' '{"type":"last-prompt","lastPrompt":"later prompt","sessionId":"x"}' \
+  '{"type":"ai-title","aiTitle":"Second title","sessionId":"x"}' '{"type":"ai-title","aiTitle":"Second title","sessionId":"x"}'
+sess f-gamma s-noai 202601010800 "$(mline)" "$(uline "$root/gamma" '"first gamma prompt"' HEAD)" \
+  '{"type":"last-prompt","lastPrompt":"an earlier prompt","sessionId":"x"}' '{"type":"last-prompt","lastPrompt":"the last prompt","sessionId":"x"}'
+sess f-root s-array 202601010700 '{"type":"queue-operation","operation":"enqueue","sessionId":"x"}' \
+  "$(uline "$root" '[{"type":"text","text":"array text  with\nnewline"},{"type":"text","text":"second block"}]')"
+sess f-delta s-multi 202601010600 "$(mline)" "$(uline "$root/delta" '"multi first"')" "$(aline "$root/delta")" "$(uline "$root/alpha" '"resumed elsewhere"')" "$(aline "$root/alpha")"
+sess f-beta s-partial 202601010500 "$(uline "$root/Beta" '"partial"')" '{"type":"ai-title","aiTitle":"Complete title","sessionId":"x"}'
+printf '%s' '{"type":"ai-title","aiTitle":"cut of' >> "$P/f-beta/s-partial.jsonl"; touch -t 202601010500 "$P/f-beta/s-partial.jsonl"
+sess f-alpha s-long 202601010400 "$(uline "$root/alpha" '"long"')" "{\"type\":\"ai-title\",\"aiTitle\":\"$long\",\"sessionId\":\"x\"}"
+sess f-alpha s-escape 202601010300 "$(uline "$root/alpha" '"esc"')" '{"type":"ai-title","aiTitle":"say \"hi\" \\ tab\u0009end","sessionId":"x"}'
+sess f-temp s-temp 202601011000 "$(uline "$work/fake-temp/x" '"in temp"')"
+sess f-alpha s-nouser 202601010950 "$(mline)" "{\"type\":\"attachment\",\"cwd\":\"$(jesc "$root/alpha")\",\"sessionId\":\"x\"}" '{"type":"ai-title","aiTitle":"No user","sessionId":"x"}'
+sess f-gone s-gone 202601010850 "$(uline "$work/deleted-folder" '"gone"')"
+mkdir -p "$P/f-alpha/s-ai/subagents"
+printf '%s\n' "$(uline "$root/alpha" '"subagent"')" > "$P/f-alpha/s-ai/subagents/agent-1.jsonl"; touch -t 202601011100 "$P/f-alpha/s-ai/subagents/agent-1.jsonl"
+echo "not a session" > "$P/f-alpha/notes.txt"
+expected="s-ai	$root/alpha	feature/x	Second title
+s-noai	$root/gamma		the last prompt
+s-array	$root		array text with newline
+s-multi	$root/delta		multi first
+s-partial	$root/Beta		Complete title
+s-long	$root/alpha		${long:0:57}...
+s-escape	$root/alpha		say \"hi\" \\ tab end"
+got="$(bash "$scripts/agent-menu.sh" --sessions claude)"
+check sessions-list "$expected" "$got"
+check sessions-ids "s-ai,s-noai,s-array,s-multi,s-partial,s-long,s-escape" "$(printf '%s\n' "$got" | cut -f1 | paste -sd,)"
+check sessions-cap "2" "$(list_sessions 2 | wc -l | tr -d ' ')"
+check sessions-off-for-codex "" "$(bash "$scripts/agent-menu.sh" --sessions codex)"
+check sessions-folder-relative "alpha|$root|$work/elsewhere" "$(session_folder "$root/alpha" "$root")|$(session_folder "$root" "$root")|$(session_folder "$work/elsewhere" "$root")"
+check sessions-age "now|5m|3h|2d|3w" "$(format_age 30)|$(format_age 300)|$(format_age 10800)|$(format_age 172800)|$(format_age 1900000)"
+check sessions-unescape 'a "q" \ b c?ZZd' "$(json_unescape 'a \"q\" \\ b\nc\uZZd')"
+check session-resume-original "cd -- '$root/alpha' && claude --fixture-flag --resume s-ai" "$(session claude "$DOWN$DOWN$ENTER$ENTER")"
+check session-resume-screen "yes" "$(grep -q 'RESUME a chat from any folder' "$work/screen" && echo yes || echo no)"
+check session-resume-filter "cd -- '$root/gamma' && claude --fixture-flag --resume s-noai" "$(session claude "$DOWN$DOWN${ENTER}last$ENTER")"
+check session-resume-root "cd -- '$root' && claude --fixture-flag --resume s-array" "$(session claude "$DOWN$DOWN${ENTER}array$ENTER")"
+check session-resume-move "cd -- '$root/delta' && claude --fixture-flag --resume s-multi" "$(session claude "$DOWN$DOWN$ENTER$DOWN$DOWN$DOWN$UP$DOWN$ENTER")"
+check session-resume-other-folder "cd -- '$root/gamma' && claude --fixture-flag --resume s-ai" "$(session claude "$DOWN$DOWN$ENTER${TAB}gam$ENTER")"
+check session-resume-other-screen "yes" "$(grep -q 'REOPEN in a folder' "$work/screen" && echo yes || echo no)"
+check session-resume-escape "" "$(session claude "$DOWN$DOWN$ENTER$TAB")"
+recent_before="$(cat "$(recent_file)")"
+session claude "$DOWN$DOWN$ENTER${TAB}gam$ENTER" > /dev/null
+check session-resume-not-recorded "$recent_before" "$(cat "$(recent_file)")"
+# Opting in another block, opting out the claude block, and an empty store.
+awk '{ print } $0 == "codex:" { print "  session_list: claude" } $0 == "claude:" { print "  session_list: off" }' "$work/agents.base" > "$AGENT_MENU_DIR/agents.yaml"
+check session-list-opt-in "cd -- '$root/alpha' && codex resume $quoted s-ai" "$(session codex "$DOWN$DOWN$ENTER$ENTER")"
+check session-list-opt-out "cd -- '$HOME' && claude --fixture-flag --resume" "$(session claude "$DOWN$DOWN$ENTER")"
+cp "$work/agents.base" "$AGENT_MENU_DIR/agents.yaml"
+mkdir -p "$work/claude-empty/projects"
+check session-list-empty-falls-back "cd -- '$HOME' && claude --fixture-flag --resume" "$(CLAUDE_CONFIG_DIR="$work/claude-empty" session claude "$DOWN$DOWN$ENTER")"
+check session-list-missing-store-falls-back "cd -- '$HOME' && claude --fixture-flag --resume" "$(CLAUDE_CONFIG_DIR="$work/no-claude" session claude "$DOWN$DOWN$ENTER")"
+unset CLAUDE_CONFIG_DIR AGENT_MENU_TEMP_DIR
+
 # --- 5. Setup, against temp folders only.
 export AGENT_MENU_DIR="$work/menu2"
 tabs="$WARP_TAB_CONFIGS_DIR"
@@ -179,6 +250,51 @@ bash "$scripts/setup.sh" --carry-args --agent-args 'claude=--explicit-flag' --ag
 check setup-explicit-args "claude --explicit-flag --resume|codex" "$(agent_command claude resume)|$(agent_command codex new)"
 msg="$(bash "$scripts/setup.sh" --agent-args 'claude=--other')"
 check setup-explicit-args-existing-config "yes|claude --explicit-flag" "$(printf '%s' "$msg" | grep -q 'not applied' && echo yes || echo no)|$(agent_command claude new)"
+
+# --- 6. Self-refresh: a fake plugin cache with one folder per version.
+check version-cmp "1|0|0|1|0|0|-1|1" "$(version_cmp 1.10.0 1.9.9)|$(version_cmp 1.4.0 1.4.0)|$(version_cmp 1.4 1.4.0)|$(version_cmp v2.0.0 1.99.99)|$(version_cmp 1.4.0-beta 1.4.0)|$(version_cmp garbage 1.4.0)|$(version_cmp 1.3.1 1.4.0)|$(version_cmp 1.4.1 1.4.0)"
+fake_plugin() { # fake_plugin <folder> <version> [marker]: a copy of this plugin's agent-menu at that version
+  local d="$1"
+  rm -rf "$d"; mkdir -p "$d/.claude-plugin" "$d/skills/agent-menu"
+  printf '{\n  "name": "terminal",\n  "version": "%s"\n}\n' "$2" > "$d/.claude-plugin/plugin.json"
+  cp -R "$scripts" "$d/skills/agent-menu/scripts"; cp -R "$here/../templates" "$d/skills/agent-menu/templates"
+  [ -z "${3:-}" ] || printf '# %s\n' "$3" >> "$d/skills/agent-menu/scripts/agent-menu.sh"
+}
+export AGENT_MENU_DIR="$work/menu4"
+cache="$work/cache/terminal"
+fake_plugin "$cache/1.4.0" 1.4.0
+bash "$cache/1.4.0/skills/agent-menu/scripts/setup.sh" --projects-root "$root" > /dev/null
+rec="$AGENT_MENU_DIR/plugin-source.txt"
+check refresh-record-written "$cache/1.4.0|terminal|1.4.0" "$(record_get "$rec" plugin)|$(record_get "$rec" name)|$(record_get "$rec" version)"
+installed="$AGENT_MENU_DIR/agent-menu.sh"
+check refresh-same-version-untouched "home,project,resume|no" "$(bash "$installed" --entries | cut -f1 | paste -sd,)|$(grep -q 'marker-1.5.0' "$installed" && echo yes || echo no)"
+cfg_before="$(cat "$AGENT_MENU_DIR/agents.yaml")"
+fake_plugin "$cache/1.5.0" 1.5.0 marker-1.5.0
+fake_plugin "$cache/1.3.1" 1.3.1 marker-1.3.1
+out="$(bash "$installed" --entries 2>"$work/refresh-err")"
+check refresh-newer-sibling "home,project,resume|yes|$cache/1.5.0|1.5.0" "$(printf '%s\n' "$out" | cut -f1 | paste -sd,)|$(grep -q 'marker-1.5.0' "$installed" && echo yes || echo no)|$(record_get "$rec" plugin)|$(record_get "$rec" version)"
+check refresh-keeps-config "$cfg_before" "$(cat "$AGENT_MENU_DIR/agents.yaml")"
+check refresh-quiet "" "$(cat "$work/refresh-err")"
+check refresh-not-again "1" "$(bash "$installed" --entries > /dev/null; grep -c 'marker-1.5.0' "$installed")"
+# A record that is not a version, or a plugin that is gone: the menu runs as it is, silently.
+write_source_record "$AGENT_MENU_DIR" "$cache/1.5.0" terminal garbage
+fake_plugin "$cache/1.6.0" 1.6.0 marker-1.6.0
+check refresh-garbage-version "no" "$(bash "$installed" --entries > /dev/null; grep -q 'marker-1.6.0' "$installed" && echo yes || echo no)"
+rm -rf "$work/cache"
+write_source_record "$AGENT_MENU_DIR" "$cache/1.5.0" terminal 1.5.0
+check refresh-source-gone "home,project,resume|" "$(bash "$installed" --entries 2>"$work/refresh-err" | cut -f1 | paste -sd,)|$(cat "$work/refresh-err")"
+# A plugin folder updated in place (not named after its version): the manifest is compared.
+fake_plugin "$work/checkout" 1.5.0
+write_source_record "$AGENT_MENU_DIR" "$work/checkout" terminal 1.5.0
+check refresh-in-place-same "no" "$(bash "$installed" --entries > /dev/null; grep -q 'marker-in-place' "$installed" && echo yes || echo no)"
+fake_plugin "$work/checkout" 1.5.1 marker-in-place
+check refresh-in-place-newer "yes|1.5.1" "$(bash "$installed" --entries > /dev/null; grep -q 'marker-in-place' "$installed" && echo yes || echo no)|$(record_get "$rec" version)"
+# Another plugin's manifest in a sibling folder is never taken.
+mkdir -p "$work/cache2/x"; fake_plugin "$work/cache2/x/2.0.0" 2.0.0 marker-other
+sed -i.bak 's/"terminal"/"other"/' "$work/cache2/x/2.0.0/.claude-plugin/plugin.json"
+fake_plugin "$work/cache2/x/1.0.0" 1.0.0
+write_source_record "$AGENT_MENU_DIR" "$work/cache2/x/1.0.0" terminal 1.0.0
+check refresh-other-plugin-ignored "no" "$(bash "$installed" --entries > /dev/null; grep -q 'marker-other' "$installed" && echo yes || echo no)"
 
 if [ "$failures" -gt 0 ]; then echo "$failures FAILURE(S)"; exit 1; fi
 echo "All $total cases passed."

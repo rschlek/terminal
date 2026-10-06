@@ -10,6 +10,12 @@
 #
 # Optional per block: new_project, the line the "+ new project" row in the
 # project view runs in projects_root. Remove the "# " before it to turn the row on.
+#
+# Optional per block: session_list. With `claude`, Resume lists past chats from
+# every folder, read from Claude Code's session store, and reopens the one picked
+# with the block's resume line plus its session id; with `off`, Resume runs the
+# resume line as it is. A block named claude gets `claude` when the key is absent,
+# every other block `off`.
 
 # The folder whose subfolders the menu lists under "Project...".
 projects_root:
@@ -23,6 +29,7 @@ claude:
   args:
   new: claude {args}
   resume: claude {args} --resume
+  # session_list: off
   # new_project: claude {args} "Create a new project in this folder."
 
 codex:

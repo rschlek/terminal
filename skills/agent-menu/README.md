@@ -5,9 +5,12 @@
 
 Sets up one standing Warp tab per agent CLI (`claude`, `codex`) that opens a
 small menu: a fresh session in the home folder, a fresh or resumed session in
-a project under the user's projects root, or the agent's own resume list. Each
-agent's launch lines live in one per-user config file (`agents.yaml`), which
-the `new-warp-chat` launcher also reads, so a flag or model change is one edit.
+a project under the user's projects root, or a resume list (for Claude Code,
+past chats from every folder, reopened in the folder they started in or in
+another project). Each agent's launch lines live in one per-user config file
+(`agents.yaml`), which the `new-warp-chat` launcher also reads, so a flag or
+model change is one edit. The installed menu refreshes its own scripts when
+the plugin it came from is updated.
 
 ## Prerequisites
 
