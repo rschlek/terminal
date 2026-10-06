@@ -46,8 +46,12 @@ the `-resume` variant for a resume). That is how a CLI is launched here, any mac
 or tenant pin (model, reasoning effort, permission mode) included. `new-warp-chat`
 inherits them when you omit the args, so breakout **adds only two things**:
 
-- the **working directory**, when the new tab must land in a specific project and
-  the CLI takes it as a flag (Codex `-C <dir>`) - via extra args;
+- the **starting folder**, when the user wants to break out into a specific
+  project or folder: pass it as the launcher's start folder (`-StartIn <dir>` on
+  Windows; `cd -- '<dir>' &&` before the command on macOS and Linux), for Claude
+  Code and Codex alike. The tab changes to that folder before the CLI starts, so
+  the chat runs there and the user is left in it when the CLI exits. (Codex also
+  takes `-C <dir>` as a flag, but the start folder covers both CLIs the same way.)
 - the **seed** (step 3).
 
 Drop or override a flag **only when the user asks**: `-ExtraArgs` to add to the set,
@@ -65,8 +69,8 @@ step - since the fresh context inherits none of this conversation. Keep it tight
 
 **4. Launch via `new-warp-chat`.** Follow the sibling skill's SKILL.md: tab name
 `breakout`, the step-1 CLI as the command, **no `-LaunchArgs`** (the standing tab
-config's args are inherited), step-2 additions as `-ExtraArgs`, the step-3 seed
-file. On Windows that is one call to its bundled helper (with no `-LaunchArgs`
+config's args are inherited), a step-2 folder as `-StartIn`, any extra flag the
+user asked for as `-ExtraArgs`, the step-3 seed file. On Windows that is one call to its bundled helper (with no `-LaunchArgs`
 it reads the user's config itself), the sibling skill's script in the same plugin:
 `../new-warp-chat/scripts/new-warp-chat.ps1` from this skill's folder, called by
 absolute path:
@@ -74,11 +78,11 @@ absolute path:
 ```powershell
 # $SkillDir = the absolute path of this skill's folder
 & "$SkillDir/../new-warp-chat/scripts/new-warp-chat.ps1" `
-    -TabName breakout -LaunchCmd <cli> [-ExtraArgs '-C <dir>'] -SeedFile '<seed>'
+    -TabName breakout -LaunchCmd <cli> [-StartIn '<dir>'] -SeedFile '<seed>'
 ```
 
-(**Omit `-SeedFile` entirely** for an empty chat; omit `-ExtraArgs` when there is
-nothing to add.) On macOS / Linux follow new-warp-chat's model-driven inline path
+(**Omit `-SeedFile` entirely** for an empty chat; omit `-StartIn` to stay in the
+current tab's folder.) On macOS / Linux follow new-warp-chat's model-driven inline path
 (resolve the args in the same order, compose the self-deleting tab command, write
 the config, fire the URI). **Never hand-assemble the Windows command line** -
 PowerShell 5.1 truncates a seed at its first `"`; the escaping lives in the launcher
@@ -93,7 +97,8 @@ the file they were inherited from (the launcher prints both), and ask what opene
   `claude.toml` / `codex.toml` (and any `-resume` variants) in the same dir. It
   self-deletes, so no `breakout` entry lingers in Warp's `+` menu beyond a flicker.
 - New Warp tabs inherit the current tab's working directory, so a handoff that
-  continues work lands in the same project for free.
+  continues work lands in the same project for free; `-StartIn` is only for a
+  different folder.
 - The new session matches the **current** CLI (step 1): a breakout from Claude opens
   Claude, from Codex opens Codex. The Codex branch (`AI_AGENT` starting `codex`,
   seed as a positional prompt) mirrors the Claude path and has been verified
