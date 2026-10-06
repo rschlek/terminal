@@ -38,6 +38,10 @@
   escaped literal into the tab config, then deletes the seed file (the launched
   tab runs the baked literal and never re-reads the file).
 
+  -StartIn <dir> makes the new tab change to that folder (Set-Location) before
+  it runs the command, for any CLI; without it the tab opens where Warp puts
+  it (the current tab's folder).
+
   Each caller names its tab via -TabName; the config self-deletes as the tab's
   first command (Warp has already read it - race-free), so no entry lingers in
   Warp's + menu. The tab name may not collide with a standing config name.
@@ -52,6 +56,9 @@
 .EXAMPLE
   new-warp-chat.ps1 -TabName breakout -LaunchCmd codex -ExtraArgs '-C C:\work\proj' -SeedFile C:\tmp\seed.txt
   # args inherited (agents.yaml, else codex.toml), then `-C C:\work\proj` appended
+.EXAMPLE
+  new-warp-chat.ps1 -TabName breakout -LaunchCmd claude -StartIn 'C:\work\my project' -SeedFile C:\tmp\seed.txt
+  # the new tab changes to 'C:\work\my project', then runs claude with the inherited args
 .EXAMPLE
   new-warp-chat.ps1 -TabName codex-chat -LaunchCmd codex -Resume -ExtraArgs '<session-id>'
   # args from the codex block's `resume` line (e.g. `codex resume {args}`: the
@@ -69,6 +76,7 @@ param(
     [switch]$Resume,                                                                   # inherit the resume form (`resume` line, or <LaunchCmd>-resume.toml)
     [string]$SeedFile = "",                                                            # path to a file holding the seed (robust; never transits a command line)
     [string]$TabName = "new-warp-chat",                                                # names the tab, its config file, and the warp:// URI
+    [string]$StartIn = "",                                                             # folder the new tab changes to before running the command
     [string]$TabConfigsDir = $(if ($env:WARP_TAB_CONFIGS_DIR) { $env:WARP_TAB_CONFIGS_DIR } else { Join-Path $env:APPDATA "warp\Warp\data\tab_configs" }),
     [string]$AgentMenuDir = $(if ($env:AGENT_MENU_DIR) { $env:AGENT_MENU_DIR } else { Join-Path $env:LOCALAPPDATA "agent-menu" }),
     [switch]$NoLaunch                                                                  # write the config but skip the warp:// launch (tests / batch prep)
@@ -195,13 +203,26 @@ if ($SeedFile) {
     }
 }
 
+# --- -StartIn: the tab changes to that folder before the command runs. The folder must
+# exist now; it becomes a single-quoted literal (every quote character PowerShell
+# treats as a single quote doubled, curly ones included), and -ErrorAction Stop means
+# a folder that vanished before the tab opened stops the line instead of launching
+# the CLI somewhere else.
+$cdPart = ""
+if ($StartIn) {
+    if (-not (Test-Path -LiteralPath $StartIn -PathType Container)) { throw "new-warp-chat: -StartIn folder not found: $StartIn" }
+    $startDir = (Resolve-Path -LiteralPath $StartIn).ProviderPath
+    $quoteClass = "['" + [char]0x2018 + [char]0x2019 + [char]0x201A + [char]0x201B + "]"
+    $cdPart = "Set-Location -LiteralPath '" + ($startDir -replace $quoteClass, '$0$0') + "' -ErrorAction Stop; "
+}
+
 # --- Compose the tab command: delete this config first (Warp has already read it,
-# so it is race-free and leaves no lingering entry in the + menu), then run the
-# command with the baked seed.
+# so it is race-free and leaves no lingering entry in the + menu), change to the
+# -StartIn folder if one was given, then run the command with the baked seed.
 if (-not (Test-Path $TabConfigsDir)) { New-Item -ItemType Directory -Path $TabConfigsDir -Force | Out-Null }
 $cfgPath = Join-Path $TabConfigsDir "$TabName.toml"
 $qCfg    = "'" + ($cfgPath -replace "'", "''") + "'"
-$tabCmd  = "Remove-Item -LiteralPath $qCfg -ErrorAction SilentlyContinue; $launch"
+$tabCmd  = "Remove-Item -LiteralPath $qCfg -ErrorAction SilentlyContinue; $cdPart$launch"
 
 # --- Embed in a TOML basic string: escape backslashes first, then double quotes.
 $tabCmdToml = ($tabCmd -replace '\\', '\\') -replace '"', '\"'
@@ -221,11 +242,11 @@ commands = ["$tabCmdToml"]
 if ($SeedFile -and (Test-Path -LiteralPath $SeedFile)) { Remove-Item -LiteralPath $SeedFile -ErrorAction SilentlyContinue }
 
 if ($NoLaunch) {
-    Write-Output "new-warp-chat: wrote $cfgPath (launch skipped) -> $launch"
+    Write-Output "new-warp-chat: wrote $cfgPath (launch skipped) -> $cdPart$launch"
     return
 }
 
 # Open the tab in the RUNNING Warp via the URI handler - never relaunch warp.exe
 # directly (that path trips Warp's session restore).
 Start-Process "warp://tab_config/$TabName"
-Write-Output "new-warp-chat: opened a new Warp tab '$TabName' -> $launch"
+Write-Output "new-warp-chat: opened a new Warp tab '$TabName' -> $cdPart$launch"
