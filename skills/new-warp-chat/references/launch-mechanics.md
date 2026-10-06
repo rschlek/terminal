@@ -91,8 +91,18 @@ use temp dirs).
 ```powershell
 # $SkillDir = the absolute path of the new-warp-chat skill's folder (above references/)
 & "$SkillDir/scripts/new-warp-chat.ps1" `
-    -TabName <name> -LaunchCmd <cmd> [-ExtraArgs '<additions>'] [-Resume] -SeedFile '<seed-file>'
+    -TabName <name> -LaunchCmd <cmd> [-ExtraArgs '<additions>'] [-Resume] [-StartIn '<dir>'] -SeedFile '<seed-file>'
 ```
+
+- `-StartIn '<dir>'` makes the tab change to that folder before it runs the
+  command, for any CLI: the tab command gets
+  `Set-Location -LiteralPath '<dir>' -ErrorAction Stop;` after the self-delete.
+  The folder must exist (the launcher refuses one that does not); the path is a
+  single-quoted literal with every quote character PowerShell reads as a single
+  quote doubled (curly ones included), so spaces, `$`, backticks and brackets
+  are taken literally, and a folder that vanished before the tab opened stops
+  the line instead of launching in the wrong folder. Without `-StartIn` the tab
+  command is unchanged.
 
 - **Omit `-LaunchArgs`** so the args are inherited (the `<cmd>` block's `new`
   line in `agents.yaml`, else the standing `<cmd>.toml`); add `-Resume` to
@@ -128,6 +138,8 @@ launch-arg inheritance against fixture standing configs in a temp dir
 missing-config fallback, the env-var dir override, the name-collision guard),
 and the agent menu config's place in the order (it beats a standing config,
 explicit args beat it, a missing block falls through, a wrong command is
-skipped, `-Resume` for both CLIs with no `-resume.toml` present). It points
+skipped, `-Resume` for both CLIs with no `-resume.toml` present), and
+`-StartIn` (the probe records the folder it started in, for names with spaces,
+quotes, `$`, a backtick, brackets and a curly apostrophe). It points
 `AGENT_MENU_DIR` at a temp dir, so the user's real config never affects it.
 Run it after ANY change to the script - the quoting has regressed before.

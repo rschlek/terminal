@@ -19,7 +19,10 @@ $ErrorActionPreference = "Stop"
 $scripts = Join-Path $PSScriptRoot "..\scripts"
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
-$saved = @{ AGENT_MENU_DIR = $env:AGENT_MENU_DIR; WARP_TAB_CONFIGS_DIR = $env:WARP_TAB_CONFIGS_DIR }
+$saved = @{ AGENT_MENU_DIR = $env:AGENT_MENU_DIR; WARP_TAB_CONFIGS_DIR = $env:WARP_TAB_CONFIGS_DIR; CLAUDE_CONFIG_DIR = $env:CLAUDE_CONFIG_DIR; AGENT_MENU_TEMP_DIR = $env:AGENT_MENU_TEMP_DIR; AGENT_MENU_REFRESHED = $env:AGENT_MENU_REFRESHED }
+Remove-Item Env:\AGENT_MENU_REFRESHED -ErrorAction SilentlyContinue
+# Never read the user's real session store: point Claude Code's config dir into the temp folder.
+$env:CLAUDE_CONFIG_DIR = Join-Path $WorkDir "claude-none"
 $env:AGENT_MENU_DIR = Join-Path $WorkDir "menu"
 $env:WARP_TAB_CONFIGS_DIR = Join-Path $WorkDir "tab_configs"
 New-Item -ItemType Directory -Force -Path $env:AGENT_MENU_DIR, $env:WARP_TAB_CONFIGS_DIR | Out-Null
@@ -128,6 +131,75 @@ $r = @(& $menu claude -Entries)[-1]
 Report "entries-start-in-missing-root" (($out -ceq 'home,project,resume') -and ($r -ceq "resume`t$HOME")) "$out | $r"
 Write-Text $configPath $base
 
+# --- 4b. The session list: fake Claude Code session files in a temp config dir. The temp
+# folder check is pointed at a fixture folder, since the whole test lives in a temp dir.
+$env:CLAUDE_CONFIG_DIR = Join-Path $WorkDir "claude"
+$env:AGENT_MENU_TEMP_DIR = Join-Path $WorkDir "fake-temp"
+$P = Join-Path $env:CLAUDE_CONFIG_DIR "projects"
+New-Item -ItemType Directory -Force -Path (Join-Path $env:AGENT_MENU_TEMP_DIR 'x') | Out-Null
+function JEsc([string]$s) { return $s.Replace('\', '\\').Replace('"', '\"') }
+function New-Session([string]$Folder, [string]$Id, [int]$Minute, [string[]]$Lines, [string]$Tail = '') {
+    $d = Join-Path $P $Folder
+    New-Item -ItemType Directory -Force -Path $d | Out-Null
+    $f = Join-Path $d "$Id.jsonl"
+    [System.IO.File]::WriteAllText($f, (($Lines -join "`n") + "`n" + $Tail), $utf8)
+    (Get-Item -LiteralPath $f).LastWriteTimeUtc = (New-Object DateTime 2026, 1, 1, 0, $Minute, 0, ([DateTimeKind]::Utc))
+}
+function ULine([string]$cwd, [string]$content, [string]$branch = '') {
+    return '{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":' + $content + '},"uuid":"u1","cwd":"' + (JEsc $cwd) + '","sessionId":"x","version":"2.1.290","gitBranch":"' + $branch + '"}'
+}
+function ALine([string]$cwd) { return '{"parentUuid":"u1","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"ok"}]},"cwd":"' + (JEsc $cwd) + '","sessionId":"x"}' }
+$mode = '{"type":"mode","mode":"normal","sessionId":"x"}'
+$long = '01234567890123456789012345678901234567890123456789012345678901234567890123456789'
+$ra = Join-Path $root 'alpha'; $rg = Join-Path $root 'gamma'; $rd = Join-Path $root 'delta'; $rb = Join-Path $root 'Beta'
+New-Session 'f-alpha' 's-ai' 59 @($mode, (ULine $ra '"first prompt"' 'feature/x'), (ALine $ra),
+    '{"type":"ai-title","aiTitle":"Old title","sessionId":"x"}', '{"type":"last-prompt","lastPrompt":"later prompt","sessionId":"x"}',
+    '{"type":"ai-title","aiTitle":"Second title","sessionId":"x"}', '{"type":"ai-title","aiTitle":"Second title","sessionId":"x"}')
+New-Session 'f-gamma' 's-noai' 58 @($mode, (ULine $rg '"first gamma prompt"' 'HEAD'),
+    '{"type":"last-prompt","lastPrompt":"an earlier prompt","sessionId":"x"}', '{"type":"last-prompt","lastPrompt":"the last prompt","sessionId":"x"}')
+New-Session 'f-root' 's-array' 57 @('{"type":"queue-operation","operation":"enqueue","sessionId":"x"}',
+    (ULine $root '[{"type":"text","text":"array text  with\nnewline"},{"type":"text","text":"second block"}]'))
+New-Session 'f-delta' 's-multi' 56 @($mode, (ULine $rd '"multi first"'), (ALine $rd), (ULine $ra '"resumed elsewhere"'), (ALine $ra))
+New-Session 'f-beta' 's-partial' 55 @((ULine $rb '"partial"'), '{"type":"ai-title","aiTitle":"Complete title","sessionId":"x"}') '{"type":"ai-title","aiTitle":"cut of'
+New-Session 'f-alpha' 's-long' 54 @((ULine $ra '"long"'), ('{"type":"ai-title","aiTitle":"' + $long + '","sessionId":"x"}'))
+New-Session 'f-alpha' 's-escape' 53 @((ULine $ra '"esc"'), '{"type":"ai-title","aiTitle":"say \"hi\" \\ tab\u0009end","sessionId":"x"}')
+New-Session 'f-temp' 's-temp' 59 @((ULine (Join-Path $env:AGENT_MENU_TEMP_DIR 'x') '"in temp"'))
+New-Session 'f-alpha' 's-nouser' 59 @($mode, ('{"type":"attachment","cwd":"' + (JEsc $ra) + '","sessionId":"x"}'), '{"type":"ai-title","aiTitle":"No user","sessionId":"x"}')
+New-Session 'f-gone' 's-gone' 59 @((ULine (Join-Path $WorkDir 'deleted-folder') '"gone"'))
+New-Session 'f-sys' 's-system' 59 @((ULine (Join-Path $env:SystemRoot 'System32') '"system"'))
+New-Session 'f-alpha\s-ai\subagents' 'agent-1' 59 @((ULine $ra '"subagent"'))
+Write-Text (Join-Path $P 'f-alpha\notes.txt') 'not a session'
+# Temp-folder ordering: s-temp etc. share minute 59 with s-ai, so give s-ai the newest time.
+(Get-Item -LiteralPath (Join-Path $P 'f-alpha\s-ai.jsonl')).LastWriteTimeUtc = (New-Object DateTime 2026, 1, 1, 1, 0, 0, ([DateTimeKind]::Utc))
+$expected = @(
+    "s-ai`t$ra`tfeature/x`tSecond title", "s-noai`t$rg`t`tthe last prompt", "s-array`t$root`t`tarray text with newline",
+    "s-multi`t$rd`t`tmulti first", "s-partial`t$rb`t`tComplete title", ("s-long`t$ra`t`t" + $long.Substring(0, 57) + '...'),
+    "s-escape`t$ra`t`tsay `"hi`" \ tab end"
+)
+$got = @(& $menu claude -Sessions)
+Report "sessions-list" (($got -join "`n") -ceq ($expected -join "`n")) ($got -join ' | ')
+$ids = (Get-ClaudeSessions $P | ForEach-Object { $_.Id }) -join ','
+Report "sessions-ids" ($ids -ceq 's-ai,s-noai,s-array,s-multi,s-partial,s-long,s-escape') $ids
+Report "sessions-cap" ((Get-ClaudeSessions $P 2).Count -eq 2) ""
+Report "sessions-off-for-codex" (@(& $menu codex -Sessions).Count -eq 0) ""
+$fs = "$(Format-SessionFolder $ra $root)|$(Format-SessionFolder $root $root)|$(Format-SessionFolder (Join-Path $WorkDir 'elsewhere') $root)"
+Report "sessions-folder-relative" ($fs -ceq "alpha|$root|$(Join-Path $WorkDir 'elsewhere')") $fs
+$ages = "$(Format-Age 30)|$(Format-Age 300)|$(Format-Age 10800)|$(Format-Age 172800)|$(Format-Age 1900000)"
+Report "sessions-age" ($ages -ceq 'now|5m|3h|2d|3w') $ages
+$un = ConvertFrom-JsonStringBody 'a \"q\" \\ b\nc\uZZd'
+Report "sessions-unescape" ($un -ceq 'a "q" \ b c?ZZd') $un
+Report "sessions-resume-command" ((Get-SessionResumeCommand $c 'claude' 's-ai') -ceq 'claude --fixture-flag --resume s-ai') (Get-SessionResumeCommand $c 'claude' 's-ai')
+Report "sessions-resume-command-codex" ((Get-SessionResumeCommand $c 'codex' 's-ai') -ceq "codex resume $quoted s-ai") (Get-SessionResumeCommand $c 'codex' 's-ai')
+$kinds = "$(Get-SessionListKind $c 'claude')|$(Get-SessionListKind $c 'codex')"
+$c3 = Read-AgentConfig $configPath
+$c3.Blocks['claude']['session_list'] = 'off'; $c3.Blocks['codex']['session_list'] = 'claude'
+$kinds += "|$(Get-SessionListKind $c3 'claude')|$(Get-SessionListKind $c3 'codex')"
+Report "sessions-kind-default-and-keys" ($kinds -ceq 'claude|||claude') $kinds
+$env:CLAUDE_CONFIG_DIR = Join-Path $WorkDir "claude-empty"
+Report "sessions-missing-store" (@(& $menu claude -Sessions).Count -eq 0) ""
+$env:CLAUDE_CONFIG_DIR = Join-Path $WorkDir "claude-none"
+Remove-Item Env:\AGENT_MENU_TEMP_DIR
+
 # --- 5. Setup, against temp folders only.
 $tabs = $env:WARP_TAB_CONFIGS_DIR
 $env:AGENT_MENU_DIR = Join-Path $WorkDir "menu2"
@@ -180,6 +252,68 @@ $cfg = Read-AgentConfig (Join-Path $env:AGENT_MENU_DIR "agents.yaml")
 Report "setup-explicit-args" (((Get-AgentCommand $cfg 'claude' 'resume') -ceq 'claude --explicit-flag --resume') -and ((Get-AgentCommand $cfg 'codex' 'new') -ceq 'codex')) $msg
 $msg = (& $setup -AgentArgs 'claude=--other') -join "`n"
 Report "setup-explicit-args-existing-config" (($msg -like "*not applied*") -and ((Get-AgentCommand (Read-AgentConfig (Join-Path $env:AGENT_MENU_DIR "agents.yaml")) 'claude' 'new') -ceq 'claude --explicit-flag')) $msg
+
+# --- 6. Self-refresh: a fake plugin cache with one folder per version.
+$cmp = @(
+    (Compare-PluginVersion '1.10.0' '1.9.9'), (Compare-PluginVersion '1.4.0' '1.4.0'), (Compare-PluginVersion '1.4' '1.4.0'),
+    (Compare-PluginVersion 'v2.0.0' '1.99.99'), (Compare-PluginVersion '1.4.0-beta' '1.4.0'), (Compare-PluginVersion 'garbage' '1.4.0'),
+    (Compare-PluginVersion '1.3.1' '1.4.0'), (Compare-PluginVersion '1.4.1' '1.4.0')
+) -join '|'
+Report "version-compare" ($cmp -ceq '1|0|0|1|0|0|-1|1') $cmp
+function New-FakePlugin([string]$Dir, [string]$Version, [string]$Marker = '', [string]$Name = 'terminal') {
+    if (Test-Path -LiteralPath $Dir) { Remove-Item -Recurse -Force -LiteralPath $Dir }
+    New-Item -ItemType Directory -Force -Path (Join-Path $Dir '.claude-plugin'), (Join-Path $Dir 'skills\agent-menu') | Out-Null
+    Write-Text (Join-Path $Dir '.claude-plugin\plugin.json') "{`n  `"name`": `"$Name`",`n  `"version`": `"$Version`"`n}`n"
+    Copy-Item -Recurse -LiteralPath $scripts -Destination (Join-Path $Dir 'skills\agent-menu\scripts')
+    Copy-Item -Recurse -LiteralPath (Join-Path $PSScriptRoot '..\templates') -Destination (Join-Path $Dir 'skills\agent-menu\templates')
+    if ($Marker) { Add-Content -LiteralPath (Join-Path $Dir 'skills\agent-menu\scripts\agent-menu.ps1') -Value "# $Marker" }
+}
+function Get-Record { return (Read-AgentConfig (Join-Path $env:AGENT_MENU_DIR 'plugin-source.txt')).Top }
+function Test-Marker([string]$m) { return [bool](Select-String -LiteralPath (Join-Path $env:AGENT_MENU_DIR 'agent-menu.ps1') -SimpleMatch $m -Quiet) }
+$env:AGENT_MENU_DIR = Join-Path $WorkDir "menu4"
+$cache = Join-Path $WorkDir "cache\terminal"
+New-FakePlugin (Join-Path $cache '1.4.0') '1.4.0'
+& (Join-Path $cache '1.4.0\skills\agent-menu\scripts\setup.ps1') -ProjectsRoot $root | Out-Null
+$rec = Get-Record
+Report "refresh-record-written" (($rec['plugin'] -ceq (Join-Path $cache '1.4.0')) -and ($rec['name'] -ceq 'terminal') -and ($rec['version'] -ceq '1.4.0')) (($rec.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ' ')
+$installed = Join-Path $env:AGENT_MENU_DIR 'agent-menu.ps1'
+$out = (@(& $installed claude -Entries) | ForEach-Object { ($_ -split "`t")[0] }) -join ','
+Report "refresh-same-version-untouched" (($out -ceq 'home,project,resume') -and -not (Test-Marker 'marker-1.5.0')) $out
+$cfgBefore = [System.IO.File]::ReadAllText((Join-Path $env:AGENT_MENU_DIR 'agents.yaml'))
+New-FakePlugin (Join-Path $cache '1.5.0') '1.5.0' 'marker-1.5.0'
+New-FakePlugin (Join-Path $cache '1.3.1') '1.3.1' 'marker-1.3.1'
+$all = @(& $installed claude -Entries 6>&1 3>&1 2>&1)
+$out = ($all | Where-Object { $_ -is [string] } | ForEach-Object { ($_ -split "`t")[0] }) -join ','
+$rec = Get-Record
+Report "refresh-newer-sibling" (($out -ceq 'home,project,resume') -and (Test-Marker 'marker-1.5.0') -and ($rec['plugin'] -ceq (Join-Path $cache '1.5.0')) -and ($rec['version'] -ceq '1.5.0')) "$out | $($rec['plugin']) $($rec['version'])"
+Report "refresh-quiet" (@($all | Where-Object { $_ -isnot [string] }).Count -eq 0) (($all | Where-Object { $_ -isnot [string] }) -join ' | ')
+Report "refresh-keeps-config" ([System.IO.File]::ReadAllText((Join-Path $env:AGENT_MENU_DIR 'agents.yaml')) -ceq $cfgBefore) ""
+Report "refresh-env-cleared" (-not $env:AGENT_MENU_REFRESHED) ""
+& $installed claude -Entries | Out-Null
+Report "refresh-not-again" (@(Select-String -LiteralPath $installed -SimpleMatch 'marker-1.5.0').Count -eq 1) ""
+Write-PluginSourceRecord $env:AGENT_MENU_DIR (Join-Path $cache '1.5.0') 'terminal' 'garbage'
+New-FakePlugin (Join-Path $cache '1.6.0') '1.6.0' 'marker-1.6.0'
+& $installed claude -Entries | Out-Null
+Report "refresh-garbage-version" (-not (Test-Marker 'marker-1.6.0')) ""
+Remove-Item -Recurse -Force (Join-Path $WorkDir "cache")
+Write-PluginSourceRecord $env:AGENT_MENU_DIR (Join-Path $cache '1.5.0') 'terminal' '1.5.0'
+$all = @(& $installed claude -Entries 6>&1 3>&1 2>&1)
+$out = ($all | Where-Object { $_ -is [string] } | ForEach-Object { ($_ -split "`t")[0] }) -join ','
+Report "refresh-source-gone" (($out -ceq 'home,project,resume') -and @($all | Where-Object { $_ -isnot [string] }).Count -eq 0) $out
+$checkout = Join-Path $WorkDir "checkout"
+New-FakePlugin $checkout '1.5.0'
+Write-PluginSourceRecord $env:AGENT_MENU_DIR $checkout 'terminal' '1.5.0'
+& $installed claude -Entries | Out-Null
+Report "refresh-in-place-same" (-not (Test-Marker 'marker-in-place')) ""
+New-FakePlugin $checkout '1.5.1' 'marker-in-place'
+& $installed claude -Entries | Out-Null
+Report "refresh-in-place-newer" ((Test-Marker 'marker-in-place') -and ((Get-Record)['version'] -ceq '1.5.1')) ""
+$cache2 = Join-Path $WorkDir "cache2\x"
+New-FakePlugin (Join-Path $cache2 '2.0.0') '2.0.0' 'marker-other' 'other'
+New-FakePlugin (Join-Path $cache2 '1.0.0') '1.0.0'
+Write-PluginSourceRecord $env:AGENT_MENU_DIR (Join-Path $cache2 '1.0.0') 'terminal' '1.0.0'
+& $installed claude -Entries | Out-Null
+Report "refresh-other-plugin-ignored" (-not (Test-Marker 'marker-other')) ""
 
 foreach ($k in $saved.Keys) {
     if ($null -ne $saved[$k]) { Set-Item -Path "Env:\$k" -Value $saved[$k] } else { Remove-Item -Path "Env:\$k" -ErrorAction SilentlyContinue }

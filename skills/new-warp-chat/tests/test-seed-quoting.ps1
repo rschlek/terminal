@@ -7,7 +7,9 @@
   round-trip, missing-config fallback, WARP_TAB_CONFIGS_DIR, name collision).
   The third covers the agent menu's config (agents.yaml) and the resolution
   order explicit > agents.yaml > standing tab config > documented default,
-  including -Resume for claude and codex with no -resume.toml present.
+  including -Resume for claude and codex with no -resume.toml present. The
+  fourth covers -StartIn: the tab changes to the folder (spaces, quotes, $,
+  backtick, brackets, a curly apostrophe) before the command runs.
 
 .DESCRIPTION
   For each edge-case seed, the harness runs the launcher with -NoLaunch, decodes
@@ -72,7 +74,7 @@ mix "dq" 'sq' $var `bt` \" and a backslash tail\
 )
 
 function Decode-TomlCommand([string]$cfgPath) {
-    $line = (Get-Content -LiteralPath $cfgPath) | Where-Object { $_ -match '^commands = \["(.*)"\]$' } | Select-Object -First 1
+    $line = (Get-Content -LiteralPath $cfgPath -Encoding UTF8) | Where-Object { $_ -match '^commands = \["(.*)"\]$' } | Select-Object -First 1
     if (-not $line) { throw "no commands line in $cfgPath" }
     # Invert the launcher's TOML escaping in one left-to-right pass:
     # encoded \\ -> \ and \" -> "
@@ -334,6 +336,69 @@ Report "config-wrong-command-skipped" (($r.Cmd -clike "*; claude") -and ($r.Msg 
 Write-AgentsYaml "claude:`n  args: --fixture-flag`n  new_project: claude {args} `"Create a new project in this folder.`"`n  new: claude {args}`n"
 $r = Get-TabCommand @{ LaunchCmd = "claude" }
 Report "config-new-project-ignored" (($r.Cmd -clike "*; claude --fixture-flag") -and ($r.Msg -like "*'claude' block, 'new' line*")) ("cmd: " + $r.Cmd + "`n      msg: " + $r.Msg)
+
+# ---------------------------------------------------------------------------
+# -StartIn: the tab changes to the folder before it runs the command. Executed:
+# a probe records its working folder (PowerShell starts a native exe in the
+# current location) and its argv; folder names carry spaces, quotes, $, a
+# backtick and brackets.
+# ---------------------------------------------------------------------------
+$probeCwd = Join-Path $WorkDir "probe-cwd.ps1"
+@'
+$lines = @("CWD=$((Get-Location).ProviderPath)", "COUNT=$($args.Count - 1)")
+if ($args.Count -gt 1) { $lines += $args[1..($args.Count - 1)] }
+[System.IO.File]::WriteAllLines($args[0], $lines)
+'@ | Set-Content -Path $probeCwd -Encoding Ascii
+$curly = [string][char]0x2019
+$startCases = @(
+    @{ Name = "startin-spaces-apostrophe"; Dir = "it's a `$dir with ``tick" }
+    @{ Name = "startin-curly-apostrophe";  Dir = "it${curly}s here" }
+    @{ Name = "startin-plain";             Dir = "plain" }
+)
+foreach ($sc in $startCases) {
+    $i++; $outFile = Join-Path $WorkDir "out$i.txt"; $seedFile = Join-Path $WorkDir "seed$i.txt"
+    $dir = Join-Path $WorkDir $sc.Dir
+    [void][System.IO.Directory]::CreateDirectory($dir)
+    [System.IO.File]::WriteAllText($seedFile, 'say "hi" there', (New-Object System.Text.UTF8Encoding($false)))
+    $msg = & $launcher -TabName "nwc-test" -LaunchCmd powershell -LaunchArgs "-NoProfile -ExecutionPolicy Bypass -File $probeCwd $outFile" `
+        -StartIn $dir -SeedFile $seedFile -TabConfigsDir $cfgDir -NoLaunch
+    $cfg = Join-Path $cfgDir "nwc-test.toml"
+    $cmd = Decode-TomlCommand $cfg
+    Push-Location $WorkDir
+    try { Invoke-Expression $cmd } finally { Pop-Location }
+    $lines = [System.IO.File]::ReadAllLines($outFile, [System.Text.Encoding]::UTF8)
+    $ok = ($lines[0] -ceq "CWD=$dir") -and ($lines[1] -eq "COUNT=1") -and ($lines[2] -ceq 'say "hi" there') -and
+          (-not (Test-Path $cfg)) -and (-not (Test-Path $seedFile)) -and ($cmd -like "*; Set-Location -LiteralPath '*' -ErrorAction Stop; powershell *")
+    Report $sc.Name $ok ("cwd: " + ($lines -join ' | ') + "`n      cmd: $cmd")
+}
+
+# Brackets: PowerShell 5.1 cannot start a native exe in a folder whose name has [ ],
+# so this case records the location in-process, with a function as the command.
+$i++; $outFile = Join-Path $WorkDir "out$i.txt"
+$dir = Join-Path $WorkDir "brackets [x] it's"
+[void][System.IO.Directory]::CreateDirectory($dir)
+function probe-here { [System.IO.File]::WriteAllText($outFile, (Get-Location).ProviderPath) }
+& $launcher -TabName "nwc-test" -LaunchCmd probe-here -LaunchArgs "" -StartIn $dir -TabConfigsDir $cfgDir -NoLaunch | Out-Null
+$cmd = Decode-TomlCommand (Join-Path $cfgDir "nwc-test.toml")
+Push-Location $WorkDir
+try { Invoke-Expression $cmd } finally { Pop-Location }
+$got = [System.IO.File]::ReadAllText($outFile)
+Report "startin-brackets" ($got -ceq $dir) ("got: $got`n      cmd: $cmd")
+
+# Without -StartIn the tab command is unchanged: no Set-Location.
+$r = Get-TabCommand @{ LaunchCmd = "claude"; LaunchArgs = "" }
+Report "startin-absent-unchanged" (($r.Cmd -notlike "*Set-Location*") -and ($r.Cmd -clike "*-ErrorAction SilentlyContinue; claude")) ("cmd: " + $r.Cmd)
+
+# -StartIn with an inherited resume line: the folder change comes before the resume.
+Write-AgentsYaml "codex:`n  args: --fixture-flag`n  new: codex {args}`n  resume: codex resume {args}`n"
+$r = Get-TabCommand @{ LaunchCmd = "codex"; Resume = $true; ExtraArgs = "sess-7"; StartIn = (Join-Path $WorkDir "plain") }
+Report "startin-codex-resume" ($r.Cmd -clike ("*; Set-Location -LiteralPath '" + (Join-Path $WorkDir "plain") + "' -ErrorAction Stop; codex resume --fixture-flag sess-7")) ("cmd: " + $r.Cmd)
+
+# A folder that does not exist is refused before anything is written.
+Remove-Item -LiteralPath (Join-Path $cfgDir "nwc-test.toml") -ErrorAction SilentlyContinue
+$threw = $false
+try { & $launcher -TabName "nwc-test" -LaunchCmd claude -LaunchArgs "" -StartIn (Join-Path $WorkDir "no-such-dir") -TabConfigsDir $cfgDir -NoLaunch | Out-Null } catch { $threw = $true }
+Report "startin-missing-folder-refused" ($threw -and -not (Test-Path (Join-Path $cfgDir "nwc-test.toml"))) ""
 
 if ($null -ne $savedAgentMenuDir) { $env:AGENT_MENU_DIR = $savedAgentMenuDir } else { Remove-Item Env:\AGENT_MENU_DIR -ErrorAction SilentlyContinue }
 Remove-Item -Recurse -Force $WorkDir -ErrorAction SilentlyContinue

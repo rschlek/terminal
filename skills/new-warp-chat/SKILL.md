@@ -38,6 +38,7 @@ parser chokes on a BOM).
 | command | What the tab runs, e.g. `claude` or `codex`. |
 | args | **Inherited from the user's own config by default** (below). Callers add to the set with extra args (`-C <dir>`, a session id) and replace it only when the user asks. |
 | seed (optional) | Text appended as the command's **final single argument** - e.g. a CLI's initial prompt. Multi-line seeds are collapsed to one line. |
+| start folder (optional) | A folder the tab changes to before running the command, for any CLI. Without it the tab opens in the current tab's folder. |
 
 Prepare any seed in a **file** (Write tool), never inline on a command line, so that
 quotes, `$` and backticks survive regardless of shell. The launcher deletes the seed
@@ -66,7 +67,8 @@ PowerShell 5.1 truncates a hand-assembled seed at its first `"`, so run
 `scripts/new-warp-chat.ps1` by absolute path (this skill's folder plus that) and never
 reimplement its escaping inline. Its invocation line, every flag (`-TabName`,
 `-LaunchCmd`, `-ExtraArgs`, `-LaunchArgs`, `-Resume`, `-SeedFile`) and what it
-escapes: [reference](references/launch-mechanics.md).
+escapes: [reference](references/launch-mechanics.md). A start folder is
+`-StartIn '<dir>'`.
 
 ## macOS / Linux - model-driven inline
 
@@ -77,10 +79,11 @@ sibling agent-menu skill's script in the same plugin, by absolute path from this
 skill's folder), else the standing config's `commands` entry; either minus the leading
 command name, verbatim, plus any extra args. Say which file they came from, and fall
 back to the reference's defaults table - saying so - only when neither exists. Then
-compose the tab command (no `$S` parts if no seed):
+compose the tab command (no `$S` parts if no seed; no `cd` part without a start
+folder, whose path is single-quoted with each `'` written as `'\''`):
 
 ```
-rm -f '<cfg>'; S="$(cat '<seed-file>')"; rm -f '<seed-file>'; <cmd> <args> "$S"
+rm -f '<cfg>'; S="$(cat '<seed-file>')"; rm -f '<seed-file>'; cd -- '<dir>' && <cmd> <args> "$S"
 ```
 
 Write `<tab_configs>/<name>.toml` with the Write tool (UTF-8, no BOM):

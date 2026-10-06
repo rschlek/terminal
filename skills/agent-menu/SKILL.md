@@ -3,7 +3,8 @@ name: agent-menu
 description: >-
   Set up the agent menu: one standing Warp tab per agent CLI (claude, codex)
   that opens a small menu - a fresh session in the home folder, a fresh or
-  resumed session in a project, or the agent's resume list - with each agent's
+  resumed session in a project, or a resume list of past chats from every
+  folder - with each agent's
   launch flags kept in one per-user config file that new-warp-chat also reads.
   Use when the user wants the agent menu, wants fewer standing Warp tab configs
   (no separate -resume tabs), or wants to change an agent's flags or model in
@@ -34,5 +35,13 @@ projects root the menu's first, preselected entry, followed by Project... and
 Resume with Home moved to the end, and opens Resume there too, since an agent's resume list shows only the
 sessions of the folder it opens in; the list can be widened to all folders
 from inside it. Setup never rewrites an existing config, so add either by
-hand. Paths, format, keys, and platform notes:
-[references/menu-details.md](references/menu-details.md).
+hand.
+
+For the `claude` block, Resume lists past chats from every folder (read from
+Claude Code's session store) and reopens the picked one in the folder it was
+started in, or, with Tab, in another project; `session_list: off` in a block
+turns that off, `session_list: claude` turns it on for another block. Setup
+records which plugin folder the menu came from, and the menu refreshes its own
+scripts when that plugin is updated; a menu installed by an older version
+starts doing so after setup runs once more. Paths, format, keys, and platform
+notes: [references/menu-details.md](references/menu-details.md).
