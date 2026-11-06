@@ -3,8 +3,8 @@
 Reference for the `warp-setup` skill: the assets and how they merge, detection
 and the onboarding precondition, install steps for the user, per-OS paths and
 commands, the self-host guard, why the order is quit -> write -> relaunch, and
-the Windows Git-probe check. Everything runs as inline commands; the skill
-ships no script.
+the Windows Git-probe and keep-awake checks. Everything runs as inline
+commands; the skill ships no script.
 
 ## The assets
 
@@ -208,3 +208,23 @@ Total `powershell.exe` or `git.exe` counts are not the gate: agent sessions and
 user commands use them too. Parentage plus the command signatures are. On a
 match, report the count and stop; do not install a process killer or a security
 exclusion.
+
+## Windows keep-awake check
+
+Warp takes any key event as typing and jumps to the bottom of the scrollback.
+A keep-awake tool that simulates key presses therefore moves the view every
+time it fires. Caffeine (Zhorn Software) does this by default (an F15 key every
+59 seconds), and with `-useshift` or `-key:xx`. With `-stes` it keeps the
+machine awake through `SetThreadExecutionState` and sends no key; `-allowss` is
+the same but lets the screensaver start. This lists a key-sending Caffeine:
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.Name -like 'caffeine*.exe' -and
+    -not ($_.CommandLine -match '(^|\s)-(stes|allowss)(\s|$)' -and
+          $_.CommandLine -notmatch '(^|\s)-(useshift|key:\S+)(\s|$)') } |
+  Select-Object Name, CommandLine
+```
+
+Any row is the finding. Report it; changing the keep-awake tool belongs to
+whatever set it up on this machine.

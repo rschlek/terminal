@@ -2,6 +2,15 @@
 
 Newest first. Each entry: the date, what was decided, and why.
 
+## 2026-11-06 - warp-setup reports a key-sending keep-awake tool, never fixes it
+
+On Windows, warp-setup checks for a running keep-awake tool that simulates key
+presses (Caffeine without `-stes` or `-allowss`) and tells the user Warp will
+jump to the bottom about once a minute. Why: Warp takes any key event as
+typing and scrolls to the bottom, which looks like a Warp fault; the fix is a
+keep-awake mode that sends no key. This plugin sets up terminals, not
+keep-awake tools, so the change belongs to whatever installed the tool.
+
 ## 2026-10-05 - The agent menu refreshes its own installed copy
 
 Setup writes `plugin-source.txt` next to the installed menu (plugin folder,
