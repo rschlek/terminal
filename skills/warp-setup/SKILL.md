@@ -47,12 +47,13 @@ afterwards. Platform paths, commands, and the reasons behind each rule:
    (in the self-host case it stays pending until the relaunch). Retry at most
    two or three times, then stop and tell the user what was written where, what
    failed, and what you need.
-5. **Keep-awake check (Windows).** If a keep-awake tool that simulates key
-   presses is running (Caffeine without `-stes` or `-allowss`; the check is in
-   the reference), tell the user Warp will jump to the bottom of the scrollback
-   every time it fires, about once a minute, and that the fix is a keep-awake
-   mode that sends no key, made wherever this machine's keep-awake is set up.
-   Report only; this skill does not install or change keep-awake tools.
+5. **Keep-awake check (Windows).** If a keep-awake tool sends a key Warp
+   reacts to, or more than one Caffeine is running (the check is in the
+   reference), tell the user Warp will jump to the bottom of the scrollback
+   every time it fires, about once a minute, and that the fix is one Caffeine
+   in Shift mode or a no-key mode, made wherever this machine's keep-awake is
+   set up. Report only; this skill does not install or change keep-awake
+   tools.
 6. **Open a session** with the `warp://tab_config/claude` URI (Warp does not
    reliably open the default tab on its own), and report what changed.
 

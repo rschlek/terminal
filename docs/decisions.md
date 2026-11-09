@@ -2,6 +2,17 @@
 
 Newest first. Each entry: the date, what was decided, and why.
 
+## 2026-11-09 - The keep-awake check passes Shift mode and flags a second Caffeine
+
+The Windows keep-awake check now flags a Caffeine that sends a key Warp reacts
+to (the default F15, `-key:xx`, `-keypress`, or `-stes`/`-allowss` on a build
+older than 1.95, which ignores them) and more than one Caffeine running. Shift
+mode (`-useshift`) passes alongside the no-key modes, and the fix it names is
+one Caffeine in either. Why: Shift mode sends only a Shift key-up, which Warp
+was observed not to react to, and unlike the no-key modes it keeps apps that
+watch input seeing the user as active; a second instance started by hand
+reintroduced F15 while a check that looked for one good instance passed.
+
 ## 2026-11-06 - warp-setup reports a key-sending keep-awake tool, never fixes it
 
 On Windows, warp-setup checks for a running keep-awake tool that simulates key

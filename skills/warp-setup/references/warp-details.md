@@ -211,20 +211,26 @@ exclusion.
 
 ## Windows keep-awake check
 
-Warp takes any key event as typing and jumps to the bottom of the scrollback.
-A keep-awake tool that simulates key presses therefore moves the view every
-time it fires. Caffeine (Zhorn Software) does this by default (an F15 key every
-59 seconds), and with `-useshift` or `-key:xx`. With `-stes` it keeps the
-machine awake through `SetThreadExecutionState` and sends no key; `-allowss` is
-the same but lets the screensaver start. This lists a key-sending Caffeine:
+Warp takes a key press as typing and jumps to the bottom of the scrollback, so
+a keep-awake tool that sends one moves the view every time it fires. Caffeine
+(Zhorn Software) sends F15 every 59 seconds by default, and other key presses
+with `-key:xx` or `-keypress`. In Shift mode (`-useshift`) it sends only a
+Shift key-up, which Warp ignores. With `-stes` or `-allowss` it keeps the
+machine awake through `SetThreadExecutionState` and sends no input; builds
+older than 1.95 ignore those flags and send F15. A second Caffeine running
+alongside a good one still sends its own keys. This reports more than one
+Caffeine and lists each one that sends a key Warp reacts to:
 
 ```powershell
-Get-CimInstance Win32_Process |
-  Where-Object { $_.Name -like 'caffeine*.exe' -and
-    -not ($_.CommandLine -match '(^|\s)-(stes|allowss)(\s|$)' -and
-          $_.CommandLine -notmatch '(^|\s)-(useshift|key:\S+)(\s|$)') } |
-  Select-Object Name, CommandLine
+$c = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -like 'caffeine*.exe' })
+if ($c.Count -gt 1) { "$($c.Count) Caffeine processes running" }
+$c | Where-Object {
+  $a = " $($_.CommandLine) "; $p = $_.ExecutablePath
+  $noKeyOk = $p -and (Get-Item -LiteralPath $p).VersionInfo.FileVersionRaw -ge [version]'1.9.5'
+  $a -match '\s-(keypress|key:\S+)\s' -or
+    ($a -notmatch '\s-useshift\s' -and -not ($noKeyOk -and $a -match '\s-(stes|allowss)\s'))
+} | Select-Object Name, CommandLine
 ```
 
-Any row is the finding. Report it; changing the keep-awake tool belongs to
+Any output is the finding. Report it; changing the keep-awake tool belongs to
 whatever set it up on this machine.
