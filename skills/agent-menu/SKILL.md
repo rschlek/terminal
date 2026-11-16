@@ -37,6 +37,11 @@ sessions of the folder it opens in; the list can be widened to all folders
 from inside it. Setup never rewrites an existing config, so add either by
 hand.
 
+An agent block may also list modes (`mode: <name>` lines, with
+`<name>.new`, `<name>.resume`, `<name>.sessions` and so on overriding the
+block's lines for that mode) to launch the same CLI against another backend or
+profile from the same tab; the menu then shows a mode line and M cycles it.
+
 For the `claude` block, Resume lists past chats from every folder (read from
 Claude Code's session store) and reopens the picked one in the folder it was
 started in, or, with Tab, in another project; `session_list: off` in a block

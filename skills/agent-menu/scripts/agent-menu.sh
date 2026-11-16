@@ -56,9 +56,14 @@ menu_dir() { printf '%s\n' "${AGENT_MENU_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/
 cfg_get() {
   local want_sec="$1" want_key="$2" file line sec="" key val
   local re_top='^([A-Za-z0-9_.-]+):([[:space:]]+(.*))?$'
-  local re_sub='^[[:space:]]+([A-Za-z0-9_.-]+):([[:space:]]+(.*))?$'
+  # A block key runs to the first colon, so a mode-scoped key such as `example.org/v1.new`
+  # (any character but a colon) reads as one key.
+  local re_sub='^[[:space:]]+([^:[:space:]][^:]*):([[:space:]]+(.*))?$'
+  local all=0
+  [ "${3:-}" = all ] && all=1
   file="$(menu_dir)/agents.yaml"
   [ -f "$file" ] || return 1
+  local found=1
   while IFS= read -r line || [ -n "$line" ]; do
     line="${line%$'\r'}"
     # drop trailing whitespace
@@ -71,10 +76,105 @@ cfg_get() {
       if [ -z "$val" ]; then sec="$key"; else sec=""; fi
     elif [[ "$line" =~ $re_sub ]]; then
       key="${BASH_REMATCH[1]}"; val="${BASH_REMATCH[3]}"
-      if [ -n "$sec" ] && [ "$sec" = "$want_sec" ] && [ "$key" = "$want_key" ]; then printf '%s\n' "$val"; return 0; fi
+      while [[ "$key" == *[[:space:]] ]]; do key="${key%?}"; done
+      if [ -n "$sec" ] && [ "$sec" = "$want_sec" ] && [ "$key" = "$want_key" ]; then
+        printf '%s\n' "$val"; found=0
+        [ "$all" = 1 ] || return 0
+      fi
     fi
   done < "$file"
+  return $found
+}
+
+# --- Modes. A block may list `mode: <name>` lines, one per mode, in the order the menu
+# cycles them; the first is the default. `<name>.<key>: value` overrides `<key>` for that
+# mode (new, resume, resume_all, new_project, args, sessions, session_list); a key the mode
+# does not override comes from the block. With no mode lines the block has no modes.
+
+# agent_modes <agent>: the modes in order, one per line, duplicates dropped.
+agent_modes() {
+  local m seen=$'\n'
+  while IFS= read -r m; do
+    while [[ "$m" == [[:space:]]* ]]; do m="${m#?}"; done
+    [ -n "$m" ] || continue
+    case "$seen" in *$'\n'"$m"$'\n'*) continue ;; esac
+    seen="$seen$m"$'\n'
+    printf '%s\n' "$m"
+  done <<EOF
+$(cfg_get "$1" mode all)
+EOF
+}
+
+# block_value <agent> <mode> <key>: `<mode>.<key>` when the mode sets it, else `<key>`;
+# exit 1 when neither is set.
+block_value() {
+  if [ -n "$2" ] && cfg_get "$1" "$2.$3"; then return 0; fi
+  cfg_get "$1" "$3"
+}
+
+# The mode-memory file: one `<agent> TAB <mode>` line per agent.
+mode_file() { printf '%s\n' "$(menu_dir)/modes.tsv"; }
+
+# selected_mode <agent>: the remembered mode while the block still lists it, else the
+# first; empty when the block has no modes.
+selected_mode() {
+  local modes saved="" line m
+  modes="$(agent_modes "$1")"
+  [ -n "$modes" ] || return 0
+  if [ -f "$(mode_file)" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ "${line%%	*}" = "$1" ] && saved="${line#*	}"
+    done < "$(mode_file)"
+  fi
+  if [ -n "$saved" ]; then
+    while IFS= read -r m; do [ "$m" = "$saved" ] && { printf '%s\n' "$m"; return 0; }; done <<EOF
+$modes
+EOF
+  fi
+  printf '%s\n' "${modes%%$'\n'*}"
+}
+
+# save_mode <agent> <mode>
+save_mode() {
+  local f tmp line
+  f="$(mode_file)"; mkdir -p "$(dirname "$f")"; tmp="$f.tmp.$$"
+  printf '%s\t%s\n' "$1" "$2" > "$tmp"
+  if [ -f "$f" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      [ "${line%%	*}" = "$1" ] || printf '%s\n' "$line" >> "$tmp"
+    done < "$f"
+  fi
+  mv -f "$tmp" "$f"
+}
+
+# resolve_mode <agent> <name>: the listed mode, matched exactly, else ignoring case; exit 1
+# when the block has no such mode.
+resolve_mode() {
+  local m lower
+  lower="$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')"
+  while IFS= read -r m; do [ -n "$m" ] && [ "$m" = "$2" ] && { printf '%s\n' "$m"; return 0; }; done <<EOF
+$(agent_modes "$1")
+EOF
+  while IFS= read -r m; do
+    [ -n "$m" ] && [ "$(printf '%s' "$m" | tr '[:upper:]' '[:lower:]')" = "$lower" ] && { printf '%s\n' "$m"; return 0; }
+  done <<EOF
+$(agent_modes "$1")
+EOF
   return 1
+}
+
+# next_mode <agent> <mode>: the mode after it in the cycle (wraps; the first when unlisted).
+next_mode() {
+  local modes m first="" hit=0
+  modes="$(agent_modes "$1")"
+  while IFS= read -r m; do
+    [ -n "$first" ] || first="$m"
+    if [ "$hit" = 1 ]; then printf '%s\n' "$m"; return 0; fi
+    [ "$m" = "$2" ] && hit=1
+  done <<EOF
+$modes
+EOF
+  printf '%s\n' "$first"
 }
 
 # cfg_has_block <agent>: exit 0 when the config has a `<agent>:` line.
@@ -116,17 +216,20 @@ home_entries() {
   fi
 }
 
-# agent_command <agent> <new|resume|resume_all|new_project>: the composed line, exit 1 when absent.
+# agent_command <agent> <new|resume|resume_all|new_project> [<mode>]: the composed line,
+# exit 1 when absent. With a mode, the mode's `<mode>.<kind>` line wins (a mode's
+# resume_all falls back to the mode's resume first) and {args} is `<mode>.args` when set.
 agent_command() {
-  local agent="$1" mode="$2" line args
+  local agent="$1" mode="$2" am="${3:-}" line args
   cfg_has_block "$agent" || return 1
-  if ! line="$(cfg_get "$agent" "$mode")"; then
-    if [ "$mode" = resume_all ] && line="$(cfg_get "$agent" resume)"; then :
-    elif [ "$mode" = new ]; then line="$agent {args}"
-    else return 1; fi
-  fi
+  if [ -n "$am" ] && line="$(cfg_get "$agent" "$am.$mode")"; then :
+  elif [ -n "$am" ] && [ "$mode" = resume_all ] && line="$(cfg_get "$agent" "$am.resume")"; then :
+  elif line="$(cfg_get "$agent" "$mode")"; then :
+  elif [ "$mode" = resume_all ] && line="$(cfg_get "$agent" resume)"; then :
+  elif [ "$mode" = new ]; then line="$agent {args}"
+  else return 1; fi
   [ -n "$line" ] || return 1
-  args="$(cfg_get "$agent" args)" || args=""
+  args="$(block_value "$agent" "$am" args)" || args=""
   if [ -z "$args" ]; then
     # drop the placeholder and the whitespace before it
     while [[ "$line" == *' {args}'* ]]; do line="${line/ \{args\}/\{args\}}"; done
@@ -227,7 +330,7 @@ list_projects() {
 # `claude` and every other block `off`, so existing configs need no change.
 session_list_kind() {
   local v
-  if v="$(cfg_get "$1" session_list)"; then :
+  if v="$(block_value "$1" "${2:-}" session_list)"; then :
   elif [ "$1" = claude ]; then v=claude
   else v=off; fi
   [ "$v" = claude ] && printf 'claude\n'
@@ -238,6 +341,19 @@ session_list_kind() {
 # the config dir being CLAUDE_CONFIG_DIR or ~/.claude. The folder name encodes the chat's
 # working folder lossily, so the real folder is read from the file instead.
 claude_projects_dir() { printf '%s\n' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects"; }
+
+# sessions_dir <agent> [<mode>]: the store that agent and mode read - its `sessions` value
+# (a path; quotes removed, ~ expanded) when set, else Claude Code's default store above.
+sessions_dir() {
+  local v
+  if v="$(block_value "$1" "${2:-}" sessions)" && [ -n "$v" ]; then
+    case "$v" in \"*\") v="${v#\"}"; v="${v%\"}" ;; \'*\') v="${v#\'}"; v="${v%\'}" ;; esac
+    case "$v" in '~') v="$HOME" ;; '~/'*) v="$HOME/${v#\~/}" ;; esac
+    printf '%s\n' "$v"
+  else
+    claude_projects_dir
+  fi
+}
 
 # json_unescape <body>: a JSON string body decoded; \" \\ \/ kept as the character,
 # \n \r \t \b \f and control-character \u escapes become a space.
@@ -377,14 +493,14 @@ read_session() {
   return 0
 }
 
-# list_sessions [<max>]: the session list, newest first by file time, at most max (40) rows:
+# list_sessions [<max>] [<store>]: the session list of a store (default: Claude Code's), newest first by file time, at most max (40) rows:
 # `id TAB cwd TAB branch TAB mtime TAB title`. Only <projects>/<folder>/<id>.jsonl files
 # count (subfolders, where subagent transcripts live, are never entered). A file is left
 # out when it has no user message, no working folder, a folder that no longer exists, or
 # a throwaway folder.
 list_sessions() {
-  local max="${1:-40}" dir files=() f line mt size path id kept=0
-  dir="$(claude_projects_dir)"
+  local max="${1:-40}" dir="${2:-}" files=() f line mt size path id kept=0
+  [ -n "$dir" ] || dir="$(claude_projects_dir)"
   [ -d "$dir" ] || return 0
   for f in "$dir"/*/*.jsonl; do [ -f "$f" ] && files+=("$f"); done
   [ "${#files[@]}" -gt 0 ] || return 0
@@ -558,8 +674,46 @@ read_key() {
   esac
 }
 
+# --- Modes in the menu. MODE is the selected mode ('' without modes); set_mode recomputes
+# what depends on it. mode_row is the line drawn on top of every screen when the agent
+# has modes: the selected mode in brackets.
+MODE=""; MODE_COUNT=0; AGENT_MODES=""
+set_mode() {
+  MODE="$1"
+  HAS_NP=0; has_new_project "$AGENT" "$MODE" && HAS_NP=1
+  SESSION_KIND="$(session_list_kind "$AGENT" "$MODE")"
+}
+step_mode() { # exit 0 when the mode changed
+  [ "$MODE_COUNT" -gt 1 ] || return 1
+  set_mode "$(next_mode "$AGENT" "$MODE")"
+  save_mode "$AGENT" "$MODE" 2>/dev/null || true
+  return 0
+}
+mode_row() { # mode_row <hint>
+  local out=" mode  " m first=1
+  while IFS= read -r m; do
+    [ -n "$m" ] || continue
+    [ "$first" = 1 ] || out="$out|"
+    first=0
+    if [ "$m" = "$MODE" ]; then out="$out[$m]"; else out="$out $m "; fi
+  done <<EOF
+$AGENT_MODES
+EOF
+  [ "$MODE_COUNT" -gt 1 ] && out="$out    ($1)"
+  printf '%s' "$out"
+}
+# with_mode_row <hint> <rows...>: sets ROWS to the rows, with the mode row first when the
+# agent has modes.
+with_mode_row() {
+  local hint="$1"; shift
+  ROWS=("$@")
+  [ "$MODE_COUNT" -gt 0 ] && ROWS=("$(mode_row "$hint")" "$@")
+  return 0
+}
+MODE_KEY_HOME=""; MODE_KEY_PICK=""
+
 home_menu() {
-  local sel=0 i n text note_p keys=() labels=() notes=() rows line
+  local sel=0 i n text note note_p keys=() labels=() notes=() rows line
   note_p="pick a project, fresh session there (Tab there: resume)"
   if [ -z "$ROOT" ]; then note_p="no projects root - set projects_root in $CONFIG"
   elif [ ! -d "$ROOT" ]; then note_p="projects root $ROOT not found - set projects_root in $CONFIG"; fi
@@ -570,9 +724,7 @@ home_menu() {
       home) labels+=("Home"); notes+=("fresh session in $HOME") ;;
       project) labels+=("Project..."); notes+=("$note_p") ;;
       resume)
-        labels+=("Resume")
-        if [ -n "$SESSION_KIND" ]; then notes+=("past $AGENT chats from every folder, newest first")
-        else notes+=("the $AGENT resume list in ${line#*	}"); fi ;;
+        labels+=("Resume"); notes+=("${line#*	}") ;;
     esac
   done <<EOF
 $(home_entries)
@@ -581,27 +733,35 @@ EOF
   while :; do
     rows=(" $AGENT" "")
     for ((i = 0; i < n; i++)); do
-      text="$(printf '%-14s %s' "${labels[$i]}" "${notes[$i]}")"
+      note="${notes[$i]}"
+      if [ "${keys[$i]}" = resume ]; then
+        # Follows the mode's session list.
+        if [ -n "$SESSION_KIND" ]; then note="past $AGENT chats from every folder, newest first"
+        else note="the $AGENT resume list in ${notes[$i]}"; fi
+      fi
+      text="$(printf '%-14s %s' "${labels[$i]}" "$note")"
       if [ "$i" = "$sel" ]; then rows+=(" > $text"); else rows+=("   $text"); fi
     done
-    rows+=("" " Up/Down move   Enter select   Esc cancel")
-    draw "${rows[@]}"
+    rows+=("" " Up/Down move   Enter select   ${MODE_KEY_HOME}Esc cancel")
+    with_mode_row "M: next mode" "${rows[@]}"
+    draw "${ROWS[@]}"
     read_key
     case "$KEY" in
       up) [ "$sel" -gt 0 ] && sel=$((sel - 1)) ;;
       down) [ "$sel" -lt $((n - 1)) ] && sel=$((sel + 1)) ;;
+      char:m|char:M) step_mode ;;
       esc) clear_region; PICK=""; return ;;
       enter) clear_region; PICK="${keys[$sel]}"; return ;;
     esac
   done
 }
 
-# has_new_project <agent>: exit 0 when the pinned `+ new project` row applies (the block
-# has a new_project line and the projects root exists).
+# has_new_project <agent> [<mode>]: exit 0 when the pinned `+ new project` row applies (the
+# block, or the mode, has a new_project line and the projects root exists).
 has_new_project() {
   local root
   root="$(projects_root)"
-  [ -n "$root" ] && [ -d "$root" ] && agent_command "$1" new_project > /dev/null
+  [ -n "$root" ] && [ -d "$root" ] && agent_command "$1" new_project "${2:-}" > /dev/null
 }
 NEW_PROJECT_LABEL="+ new project"
 
@@ -657,10 +817,12 @@ EOF
     else rows+=(""); fi
     if [ "$mode" = pick ]; then
       rows+=(" filter: ${filter}_" " type to filter   Up/Down move   Enter reopen the chat here   Esc back to the chats")
+      with_mode_row "a chat reopens in the mode it was listed in" "${rows[@]}"
     else
-      rows+=(" filter: ${filter}_" " type to filter   Up/Down move   Tab new/resume   Enter select   Esc back")
+      rows+=(" filter: ${filter}_" " type to filter   Up/Down move   Tab new/resume   ${MODE_KEY_PICK}Enter select   Esc back")
+      with_mode_row "Shift+M: next mode" "${rows[@]}"
     fi
-    draw "${rows[@]}"
+    draw "${ROWS[@]}"
     read_key
     case "$KEY" in
       up)
@@ -681,15 +843,34 @@ EOF
           shopt -u nocasematch; clear_region
           CHOICE_DIR="${paths[${view[$sel]}]}"; CHOICE_MODE="$mode"; return
         fi ;;
-      char:*) filter="$filter${KEY#char:}"; sel=0; on_pin=0 ;;
+      char:*)
+        # Shift+M cycles the mode (a lower-case m is filter text); not while picking a folder.
+        if [ "$KEY" = char:M ] && [ "$mode" != pick ] && [ "$MODE_COUNT" -gt 1 ]; then step_mode
+        else filter="$filter${KEY#char:}"; sel=0; on_pin=0; fi ;;
     esac
   done
 }
 
+# load_sessions: SESSIONS from the selected mode's store (read again only after a mode change).
+LOADED_MODE="-"
+load_sessions() {
+  local s
+  [ "$LOADED_MODE" = "$MODE" ] && return 0
+  SESSIONS=()
+  if [ -n "$SESSION_KIND" ]; then
+    while IFS= read -r s; do [ -n "$s" ] && SESSIONS+=("$s"); done <<EOF
+$(list_sessions 40 "$(sessions_dir "$AGENT" "$MODE")")
+EOF
+  fi
+  LOADED_MODE="$MODE"
+}
+
 # session_picker: the session list (SESSIONS, list_sessions rows). Sets SESSION_IDX (an
 # index into SESSIONS) and SESSION_OTHER (1: Tab, pick another folder), or SESSION_IDX=""
-# on Esc. Filters on title and folder.
+# on Esc; SESSION_RELOAD=1 when Shift+M changed the mode (the caller reloads and reopens).
+# Filters on title and folder.
 session_picker() {
+  SESSION_RELOAD=0
   local ids=() cwds=() branches=() ages=() titles=() folders=() line rest now
   now="$(date +%s)"
   for line in "${SESSIONS[@]}"; do
@@ -723,10 +904,12 @@ session_picker() {
     done
     more=$(( ${#view[@]} - offset - nrows ))
     if [ "$more" -gt 0 ]; then rows+=("   ... $more more")
+    elif [ "${#ids[@]}" -eq 0 ]; then rows+=("   no chats in this mode's store")
     elif [ "${#view[@]}" -eq 0 ]; then rows+=("   no match")
     else rows+=(""); fi
-    rows+=(" filter: ${filter}_" " type to filter   Up/Down move   Enter reopen in its folder   Tab another folder   Esc back")
-    draw "${rows[@]}"
+    rows+=(" filter: ${filter}_" " type to filter   Up/Down move   Enter reopen in its folder   Tab another folder   ${MODE_KEY_PICK}Esc back")
+    with_mode_row "Shift+M: next mode" "${rows[@]}"
+    draw "${ROWS[@]}"
     read_key
     case "$KEY" in
       up) [ "$sel" -gt 0 ] && sel=$((sel - 1)) ;;
@@ -739,7 +922,11 @@ session_picker() {
           SESSION_IDX="${view[$sel]}"; SESSION_OTHER=0; [ "$KEY" = tab ] && SESSION_OTHER=1
           return
         fi ;;
-      char:*) filter="$filter${KEY#char:}"; sel=0 ;;
+      char:*)
+        if [ "$KEY" = char:M ] && [ "$MODE_COUNT" -gt 1 ]; then
+          step_mode; shopt -u nocasematch; SESSION_IDX=""; SESSION_RELOAD=1; return
+        fi
+        filter="$filter${KEY#char:}"; sel=0 ;;
     esac
   done
 }
@@ -755,34 +942,67 @@ main() {
   if [ -z "${AGENT_MENU_REFRESHED:-}" ] && refresh_menu "$self_dir" 2>/dev/null; then
     AGENT_MENU_REFRESHED=1 exec bash "$self_dir/agent-menu.sh" "$@"
   fi
+  # --mode <name> first: use that mode instead of the remembered one (not saved).
+  local mode_arg="" agent_arg=""
+  if [ "${1:-}" = --mode ]; then
+    [ -n "${2:-}" ] || { echo "usage: agent-menu.sh --mode <name> <agent | --print ... | --sessions ...>" >&2; return 2; }
+    mode_arg="$2"; shift 2
+  fi
+  case "${1:-}" in --print|--sessions|--modes|--list) agent_arg="${2:-}" ;; -*|'') ;; *) agent_arg="$1" ;; esac
+  local am=""
+  if [ -n "$agent_arg" ] && cfg_has_block "$agent_arg"; then
+    if [ -n "$mode_arg" ]; then
+      am="$(resolve_mode "$agent_arg" "$mode_arg")" || {
+        local list; list="$(agent_modes "$agent_arg")"; list="${list//$'\n'/, }"
+        echo "agent-menu: the '$agent_arg' block has no mode '$mode_arg' (modes: $list)" >&2; return 1; }
+    else
+      am="$(selected_mode "$agent_arg")"
+    fi
+  fi
   case "${1:-}" in
     --print)
       [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: agent-menu.sh --print <agent> <new|resume|resume_all|new_project>" >&2; return 2; }
-      agent_command "$2" "$3" || { echo "agent-menu: no '$3' line for '$2' in $(menu_dir)/agents.yaml" >&2; return 1; }
+      agent_command "$2" "$3" "$am" || { echo "agent-menu: no '$3' line for '$2' in $(menu_dir)/agents.yaml" >&2; return 1; }
+      return 0 ;;
+    --modes)
+      [ -n "${2:-}" ] || { echo "usage: agent-menu.sh --modes <agent>" >&2; return 2; }
+      cfg_has_block "$2" || return 0
+      local m remembered
+      remembered="$(selected_mode "$2")"
+      while IFS= read -r m; do
+        [ -n "$m" ] || continue
+        if [ "$m" = "$remembered" ]; then printf '%s\t*\t%s\n' "$m" "$(sessions_dir "$2" "$m")"
+        else printf '%s\t\t%s\n' "$m" "$(sessions_dir "$2" "$m")"; fi
+      done <<EOF
+$(agent_modes "$2")
+EOF
       return 0 ;;
     --list)
-      if [ -n "${2:-}" ] && has_new_project "$2"; then printf '%s\t%s\t\t\n' "$NEW_PROJECT_LABEL" "$(projects_root)"; fi
+      if [ -n "${2:-}" ] && has_new_project "$2" "$am"; then printf '%s\t%s\t\t\n' "$NEW_PROJECT_LABEL" "$(projects_root)"; fi
       list_projects "$(projects_root)"; return 0 ;;
     --entries) home_entries; return 0 ;;
     --sessions)
       [ -n "${2:-}" ] || { echo "usage: agent-menu.sh --sessions <agent>" >&2; return 2; }
       cfg_has_block "$2" || return 0
-      if [ -n "$(session_list_kind "$2")" ]; then
-        list_sessions | while IFS= read -r line; do
+      if [ -n "$(session_list_kind "$2" "$am")" ]; then
+        list_sessions 40 "$(sessions_dir "$2" "$am")" | while IFS= read -r line; do
           local id="${line%%	*}" rest="${line#*	}" cwd branch
           cwd="${rest%%	*}"; rest="${rest#*	}"; branch="${rest%%	*}"; rest="${rest#*	}"
           printf '%s\t%s\t%s\t%s\n' "$id" "$cwd" "$branch" "${rest#*	}"
         done
       fi
       return 0 ;;
-    ''|-*) echo "usage: agent-menu.sh <agent> | --print <agent> <mode> | --list [<agent>] | --entries | --sessions <agent>" >&2; return 2 ;;
+    ''|-*) echo "usage: agent-menu.sh [--mode <name>] <agent> | --print <agent> <kind> | --list [<agent>] | --entries | --sessions <agent> | --modes <agent>" >&2; return 2 ;;
   esac
   AGENT="$1"; CONFIG="$(menu_dir)/agents.yaml"
   if [ ! -f "$CONFIG" ]; then echo "agent-menu: no config at $CONFIG - run the agent-menu setup" >&2; return 1; fi
   if ! cfg_has_block "$AGENT"; then echo "agent-menu: $CONFIG has no '$AGENT' block" >&2; return 1; fi
   ROOT="$(projects_root)"
-  HAS_NP=0; has_new_project "$AGENT" && HAS_NP=1
-  SESSION_KIND="$(session_list_kind "$AGENT")"; SESSIONS=(); local loaded=0
+  AGENT_MODES="$(agent_modes "$AGENT")"
+  MODE_COUNT=0; [ -n "$AGENT_MODES" ] && MODE_COUNT="$(printf '%s\n' "$AGENT_MODES" | grep -c .)"
+  if [ "$MODE_COUNT" -gt 1 ]; then MODE_KEY_HOME="M mode   "; MODE_KEY_PICK="Shift+M mode   "; fi
+  SESSIONS=()
+  set_mode "$am"
   # Keys come from fd 4 and drawing goes to fd 3, both the terminal; the two
   # AGENT_MENU_TTY_* variables swap in files so tests can script a session.
   exec 3>"${AGENT_MENU_TTY_OUT:-/dev/tty}" 4<"${AGENT_MENU_TTY_IN:-/dev/tty}" || { echo "agent-menu: no terminal" >&2; return 1; }
@@ -799,15 +1019,11 @@ main() {
       home) dir="$HOME"; mode=new; break ;;
       resume)
         if [ -n "$SESSION_KIND" ]; then
-          if [ "$loaded" = 0 ]; then
-            while IFS= read -r s; do [ -n "$s" ] && SESSIONS+=("$s"); done <<EOF
-$(list_sessions)
-EOF
-            loaded=1
-          fi
+          load_sessions
           if [ "${#SESSIONS[@]}" -gt 0 ]; then
             while :; do
               session_picker
+              if [ "$SESSION_RELOAD" = 1 ]; then load_sessions; continue; fi
               [ -n "$SESSION_IDX" ] || break
               s="${SESSIONS[$SESSION_IDX]}"
               if [ "$SESSION_OTHER" = 0 ]; then sid="${s%%	*}"; s="${s#*	}"; dir="${s%%	*}"; break; fi
@@ -832,11 +1048,12 @@ EOF
     esac
   done
   local line
-  if ! line="$(agent_command "$AGENT" "$mode")"; then
+  if ! line="$(agent_command "$AGENT" "$mode" "$MODE")"; then
     echo "agent-menu: the '$AGENT' block in $CONFIG has no '$mode' line" >&2; return 1
   fi
   [ -z "$sid" ] || line="$line $sid"
-  printf '%s> %s\n' "$dir" "$line" >&3
+  if [ -n "$MODE" ]; then printf '[%s] %s> %s\n' "$MODE" "$dir" "$line" >&3
+  else printf '%s> %s\n' "$dir" "$line" >&3; fi
   printf 'cd -- %s && %s\n' "$(shell_quote "$dir")" "$line"
 }
 

@@ -2,6 +2,19 @@
 
 Newest first. Each entry: the date, what was decided, and why.
 
+## 2026-11-15 - Agent-menu modes are mode-scoped keys in the flat format
+
+An agent block can list `mode: <name>` lines; `<name>.<key>` lines replace a
+key in that mode, anything else comes from the block, and the first mode is
+the default. M cycles the mode on the home screen and Shift+M in the pickers;
+the choice is remembered per agent in `modes.tsv`. Why: one tab per CLI that
+can start, resume and list the chats of more than one backend or profile,
+without a second tab config, keeps the flat line-based format (a block key now
+runs to the first colon, so mode names may hold dots and slashes). Tab was
+taken by new/resume and by reopen-elsewhere; a lower-case m is filter text in
+the pickers, hence Shift+M there. A mode line gets flags only where it says
+`{args}`, so a mode that runs another launcher never inherits the block's.
+
 ## 2026-11-09 - The keep-awake check passes Shift mode and flags a second Caffeine
 
 The Windows keep-awake check now flags a Caffeine that sends a key Warp reacts

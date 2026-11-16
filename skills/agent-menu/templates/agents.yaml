@@ -15,7 +15,23 @@
 # every folder, read from Claude Code's session store, and reopens the one picked
 # with the block's resume line plus its session id; with `off`, Resume runs the
 # resume line as it is. A block named claude gets `claude` when the key is absent,
-# every other block `off`.
+# every other block `off`. Optional `sessions`: the projects folder of the Claude
+# Code store Resume reads, when it is not the default (CLAUDE_CONFIG_DIR or
+# ~/.claude, plus /projects).
+#
+# Optional per block: modes, for launching the same CLI against different
+# backends or profiles from one tab. Each `mode: <name>` line adds a mode, in the
+# order the menu cycles them (M on the home screen, Shift+M in the pickers); the
+# first is the default and the menu remembers the last one picked. A
+# `<name>.<key>: value` line (new, resume, resume_all, new_project, args,
+# sessions, session_list) replaces that key in that mode; any key a mode leaves
+# out comes from the block. A mode name may hold any character but a colon. A
+# mode's line gets args only where it says {args}. Example:
+#   mode: default
+#   mode: other
+#   other.new: other-launcher
+#   other.resume: other-launcher --resume
+#   other.sessions: ~/.other-profile/projects
 
 # The folder whose subfolders the menu lists under "Project...".
 projects_root:

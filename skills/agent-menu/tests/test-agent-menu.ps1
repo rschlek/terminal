@@ -197,6 +197,67 @@ $kinds += "|$(Get-SessionListKind $c3 'claude')|$(Get-SessionListKind $c3 'codex
 Report "sessions-kind-default-and-keys" ($kinds -ceq 'claude|||claude') $kinds
 $env:CLAUDE_CONFIG_DIR = Join-Path $WorkDir "claude-empty"
 Report "sessions-missing-store" (@(& $menu claude -Sessions).Count -eq 0) ""
+
+# --- 4c. Modes. No mode lines: no modes, -Modes prints nothing, the lines are unchanged.
+$env:CLAUDE_CONFIG_DIR = Join-Path $WorkDir "claude"
+Report "modes-none" (((Get-AgentModes $c 'claude').Count -eq 0) -and (@(& $menu claude -Modes).Count -eq 0) -and ((Get-SelectedMode $c 'claude') -ceq '')) ""
+Report "modes-none-print-unchanged" ((& $menu claude -Print resume) -ceq 'claude --fixture-flag --resume') ""
+# A block with modes: the first uses the block's lines; the second overrides new, resume,
+# new_project and sessions; its lines get args only where they say {args}.
+$alt = 'alt.example/v1'
+$altStore = Join-Path $WorkDir 'claude-alt\projects'
+$modeBase = [System.IO.File]::ReadAllText($configPath)
+Write-Text $configPath ($modeBase + "`r`n" + (@(
+    "mc:", "  args: --fixture-flag", "  new: mc {args}", "  resume: mc {args} --resume",
+    "  new_project: mc {args} `"Create.`"", "  session_list: claude",
+    "  mode: First", "  mode: $alt", "  mode: First",
+    "  $alt.new: & 'C:\alt dir\launch.ps1'", "  $alt.resume: & 'C:\alt dir\launch.ps1' --resume",
+    "  $alt.new_project: & 'C:\alt dir\launch.ps1' {args} `"Create.`"", "  $alt.sessions: `"$altStore`"",
+    "  third: x"
+) -join "`r`n") + "`r`n")
+$cm = Read-AgentConfig $configPath
+Report "modes-parsed-in-order" (((Get-AgentModes $cm 'mc') -join '|') -ceq "First|$alt") ((Get-AgentModes $cm 'mc') -join '|')
+Report "modes-key-with-slash-and-dots" ($cm.Blocks['mc']["$alt.sessions"] -ceq "`"$altStore`"") $cm.Blocks['mc']["$alt.sessions"]
+Report "modes-first-uses-block" (((Get-AgentCommand $cm 'mc' 'new' 'First') -ceq 'mc --fixture-flag') -and ((Get-AgentCommand $cm 'mc' 'resume' 'First') -ceq 'mc --fixture-flag --resume')) ""
+Report "modes-override-new" ((Get-AgentCommand $cm 'mc' 'new' $alt) -ceq "& 'C:\alt dir\launch.ps1'") (Get-AgentCommand $cm 'mc' 'new' $alt)
+Report "modes-override-resume" ((Get-AgentCommand $cm 'mc' 'resume' $alt) -ceq "& 'C:\alt dir\launch.ps1' --resume") (Get-AgentCommand $cm 'mc' 'resume' $alt)
+Report "modes-resume-all-follows-mode" ((Get-AgentCommand $cm 'mc' 'resume_all' $alt) -ceq "& 'C:\alt dir\launch.ps1' --resume") (Get-AgentCommand $cm 'mc' 'resume_all' $alt)
+Report "modes-override-new-project-args" ((Get-AgentCommand $cm 'mc' 'new_project' $alt) -ceq "& 'C:\alt dir\launch.ps1' --fixture-flag `"Create.`"") (Get-AgentCommand $cm 'mc' 'new_project' $alt)
+Report "modes-no-mode-is-block" ((Get-AgentCommand $cm 'mc' 'new') -ceq 'mc --fixture-flag') ""
+Report "modes-session-resume" ((Get-SessionResumeCommand $cm 'mc' 's-1' $alt) -ceq "& 'C:\alt dir\launch.ps1' --resume s-1") (Get-SessionResumeCommand $cm 'mc' 's-1' $alt)
+Report "modes-sessions-dir" (((Get-SessionsDir $cm 'mc' $alt) -ceq $altStore) -and ((Get-SessionsDir $cm 'mc' 'First') -ceq (Get-ClaudeProjectsDir))) "$(Get-SessionsDir $cm 'mc' $alt)"
+Report "modes-next-wraps" (((Get-NextMode @('a', 'b') 'a') -ceq 'b') -and ((Get-NextMode @('a', 'b') 'b') -ceq 'a') -and ((Get-NextMode @('a', 'b') 'gone') -ceq 'a')) ""
+# Mode memory: the first by default, the saved one after, the first again when the saved
+# mode is no longer listed; one line per agent.
+Report "modes-memory-default-first" ((Get-SelectedMode $cm 'mc') -ceq 'First') ""
+Save-SelectedMode 'mc' $alt
+Save-SelectedMode 'other' 'x'
+Report "modes-memory-saved" ((Get-SelectedMode $cm 'mc') -ceq $alt) (Get-SelectedMode $cm 'mc')
+Save-SelectedMode 'mc' $alt
+$stateLines = [System.IO.File]::ReadAllLines((Get-ModeStatePath))
+Report "modes-memory-one-line-per-agent" (($stateLines.Count -eq 2) -and ($stateLines[0] -ceq "mc`t$alt")) ($stateLines -join ' | ')
+$out = & $menu mc -Print new
+Report "modes-menu-print-remembered" ($out -ceq "& 'C:\alt dir\launch.ps1'") "$out"
+$out = & $menu mc -Mode first -Print new
+Report "modes-menu-print-mode-param" ($out -ceq 'mc --fixture-flag') "$out"
+Report "modes-menu-mode-param-not-saved" ((Get-SelectedMode $cm 'mc') -ceq $alt) ""
+$info = @(& $menu mc -Mode nope -Print new 6>&1)
+Report "modes-menu-unknown-mode" ((@($info | Where-Object { $_ -isnot [System.Management.Automation.InformationRecord] }).Count -eq 0) -and (($info -join ' ') -like "*no mode 'nope'*")) ($info -join ' | ')
+$rowsM = @(& $menu mc -Modes)
+Report "modes-menu-modes" (($rowsM.Count -eq 2) -and ($rowsM[0] -ceq "First`t`t$(Get-ClaudeProjectsDir)") -and ($rowsM[1] -ceq "$alt`t*`t$altStore")) ($rowsM -join ' | ')
+# Per-mode session stores: the default store holds s-ai etc.; the mode's store its own chat.
+New-Item -ItemType Directory -Force -Path (Join-Path $altStore 'f-alt') | Out-Null
+Write-Text (Join-Path $altStore 'f-alt\s-alt.jsonl') ((ULine $rg '"alt prompt"') + "`n")
+$env:AGENT_MENU_TEMP_DIR = Join-Path $WorkDir "fake-temp"
+$got = @(& $menu mc -Sessions)
+Report "modes-sessions-from-mode-store" (($got.Count -eq 1) -and ($got[0] -ceq "s-alt`t$rg`t`talt prompt")) ($got -join ' | ')
+$got = @(& $menu mc -Mode First -Sessions)
+Report "modes-sessions-default-store" (($got.Count -eq 7) -and ($got[0] -like 's-ai*')) ($got -join ' | ')
+$rowsNp = @(& $menu mc -List)
+Report "modes-list-pinned-row-follows-mode" ($rowsNp[0] -ceq "+ new project`t$root`t`t") ($rowsNp[0])
+Write-Text $configPath $modeBase
+Remove-Item -LiteralPath (Get-ModeStatePath) -Force
+
 $env:CLAUDE_CONFIG_DIR = Join-Path $WorkDir "claude-none"
 Remove-Item Env:\AGENT_MENU_TEMP_DIR
 

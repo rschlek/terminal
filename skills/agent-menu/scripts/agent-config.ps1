@@ -29,6 +29,16 @@
   An agent block may carry `session_list` (claude | off): with `claude` the menu's
   Resume lists past chats from every folder, read from Claude Code's session
   store; a block named `claude` gets it by default, every other block `off`.
+  `sessions` names that store's projects folder when it is not the default.
+
+  MODES. A block may list `mode: <name>` lines, one per mode, in the order the
+  menu cycles them (M on the home screen, Shift+M in the pickers). The first
+  mode is the default. A line `<name>.<key>: value` (new, resume, resume_all,
+  new_project, args, sessions, session_list) overrides `<key>` for that mode;
+  a key the mode does not override comes from the block. A mode name may hold
+  any character but a colon. With no mode lines the block has no modes and the
+  menu shows no mode line. The menu remembers the last mode per agent in
+  modes.tsv next to the config.
 
   This file also holds the project listing (the menu's Project view), the
   recent-projects state file, the session list and the self-refresh, so all of
@@ -47,7 +57,9 @@ function Read-AgentConfig([string]$Path) {
     if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return $null }
     $top = @{}
     $blocks = @{}
+    $modes = @{}
     $current = $null
+    $currentName = ''
     foreach ($raw in [System.IO.File]::ReadAllLines($Path)) {
         $line = $raw.TrimEnd()
         if ($line.Trim() -eq '' -or $line.TrimStart().StartsWith('#')) { continue }
@@ -59,27 +71,108 @@ function Read-AgentConfig([string]$Path) {
             if ($value -eq '') {
                 $current = @{}
                 $blocks[$key] = $current
+                $currentName = $key
+                $modes[$key] = New-Object System.Collections.Generic.List[string]
             } else {
                 $current = $null
             }
-        } elseif ($line -match '^[ \t]+([A-Za-z0-9_.-]+):(?:\s+(.*))?$' -and $null -ne $current) {
-            $current[$Matches[1]] = if ($Matches[2]) { $Matches[2] } else { '' }
+        } elseif ($line -match '^[ \t]+([^:\s][^:]*):(?:\s+(.*))?$' -and $null -ne $current) {
+            # A block key runs to the first colon, so a mode-scoped key such as
+            # `example.org/v1.new` (any character but a colon) reads as one key.
+            $k = $Matches[1].TrimEnd()
+            $v = if ($Matches[2]) { $Matches[2] } else { '' }
+            $current[$k] = $v
+            if ($k -eq 'mode' -and $v.Trim() -ne '' -and -not $modes[$currentName].Contains($v.Trim())) { $modes[$currentName].Add($v.Trim()) }
         } else {
             Write-Warning "agent-config: ignoring a line in $Path that is neither 'key: value' nor a two-space-indented block line: $line"
         }
     }
-    return @{ Top = $top; Blocks = $blocks }
+    return @{ Top = $top; Blocks = $blocks; Modes = $modes }
 }
 
-# --- The configured projects root, or '' when unset.
-function Get-ProjectsRoot($Config) {
-    if ($null -eq $Config -or -not $Config.Top.ContainsKey('projects_root')) { return '' }
-    $v = $Config.Top['projects_root'].Trim()
+# --- A path value: surrounding quotes removed, a leading ~ expanded.
+function ConvertTo-ConfigPath([string]$Value) {
+    $v = "$Value".Trim()
     if ($v.Length -ge 2 -and (($v[0] -eq '"' -and $v[-1] -eq '"') -or ($v[0] -eq "'" -and $v[-1] -eq "'"))) {
         $v = $v.Substring(1, $v.Length - 2)
     }
     if ($v -eq '~' -or $v.StartsWith('~/') -or $v.StartsWith('~\')) { $v = $HOME + $v.Substring(1) }
     return $v
+}
+
+# --- The configured projects root, or '' when unset.
+function Get-ProjectsRoot($Config) {
+    if ($null -eq $Config -or -not $Config.Top.ContainsKey('projects_root')) { return '' }
+    return (ConvertTo-ConfigPath $Config.Top['projects_root'])
+}
+
+# --- Modes. The block's `mode:` lines in order (an empty list when it has none).
+function Get-AgentModes($Config, [string]$Agent) {
+    $list = @()
+    if ($null -ne $Config -and $Config.Modes -and $Config.Modes.ContainsKey($Agent)) { $list = @($Config.Modes[$Agent]) }
+    return , $list
+}
+
+# One block value for a mode: `<mode>.<key>` when the mode overrides it, else `<key>`;
+# $null when neither is set.
+function Get-BlockValue($Config, [string]$Agent, [string]$AgentMode, [string]$Key) {
+    if ($null -eq $Config -or -not $Config.Blocks.ContainsKey($Agent)) { return $null }
+    $block = $Config.Blocks[$Agent]
+    if ($AgentMode -and $block.ContainsKey("$AgentMode.$Key")) { return $block["$AgentMode.$Key"] }
+    if ($block.ContainsKey($Key)) { return $block[$Key] }
+    return $null
+}
+
+# The mode-memory file: one `<agent><TAB><mode>` line per agent.
+function Get-ModeStatePath { return (Join-Path (Get-AgentMenuDir) 'modes.tsv') }
+
+# The mode the menu starts in: the remembered one while the block still lists it, else
+# the first; '' when the block has no modes.
+function Get-SelectedMode($Config, [string]$Agent) {
+    $modes = Get-AgentModes $Config $Agent
+    if ($modes.Count -eq 0) { return '' }
+    $path = Get-ModeStatePath
+    if (Test-Path -LiteralPath $path) {
+        foreach ($line in [System.IO.File]::ReadAllLines($path)) {
+            $cols = $line -split "`t", 2
+            if ($cols.Count -eq 2 -and $cols[0] -ceq $Agent) {
+                foreach ($m in $modes) { if ($m -ceq $cols[1]) { return $m } }
+            }
+        }
+    }
+    return $modes[0]
+}
+
+function Save-SelectedMode([string]$Agent, [string]$AgentMode) {
+    $path = Get-ModeStatePath
+    $dir = Split-Path -Parent $path
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    $lines = @("$Agent`t$AgentMode")
+    if (Test-Path -LiteralPath $path) {
+        foreach ($line in [System.IO.File]::ReadAllLines($path)) {
+            $cols = $line -split "`t", 2
+            if ($cols.Count -eq 2 -and $cols[0] -cne $Agent) { $lines += $line }
+        }
+    }
+    $tmp = "$path.new"
+    [System.IO.File]::WriteAllLines($tmp, [string[]]$lines, (New-Object System.Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $tmp -Destination $path -Force
+}
+
+# The mode after $Current in the cycle (wraps; the first when $Current is not listed).
+function Get-NextMode([string[]]$Modes, [string]$Current) {
+    if ($Modes.Count -eq 0) { return '' }
+    for ($i = 0; $i -lt $Modes.Count; $i++) { if ($Modes[$i] -ceq $Current) { return $Modes[($i + 1) % $Modes.Count] } }
+    return $Modes[0]
+}
+
+# A mode name as typed (-Mode): the listed name, matched exactly, else ignoring case;
+# $null when the block has no such mode.
+function Resolve-AgentMode($Config, [string]$Agent, [string]$Name) {
+    $modes = Get-AgentModes $Config $Agent
+    foreach ($m in $modes) { if ($m -ceq $Name) { return $m } }
+    foreach ($m in $modes) { if ($m -ieq $Name) { return $m } }
+    return $null
 }
 
 # --- The home screen's entries, in order, as @{ Key; Dir }. Without `start_in:
@@ -109,19 +202,23 @@ function Get-HomeEntries($Config) {
     return , $entries
 }
 
-# --- The composed command line for one agent and mode (new | resume | resume_all),
-# or $null when the config has no such block or line. resume_all falls back to
-# resume; a block with no `new` line launches the bare agent name plus args.
-function Get-AgentCommand($Config, [string]$Agent, [string]$Mode) {
+# --- The composed command line for one agent and kind (new | resume | resume_all |
+# new_project), or $null when the config has no such block or line. resume_all falls
+# back to resume; a block with no `new` line launches the bare agent name plus args.
+# With $AgentMode, the mode's own `<mode>.<kind>` line wins (a mode's resume_all falls
+# back to the mode's resume first), and {args} is the mode's `<mode>.args` when set.
+function Get-AgentCommand($Config, [string]$Agent, [string]$Mode, [string]$AgentMode = '') {
     if ($null -eq $Config -or -not $Config.Blocks.ContainsKey($Agent)) { return $null }
     $block = $Config.Blocks[$Agent]
     $line = $null
-    if ($block.ContainsKey($Mode)) { $line = $block[$Mode] }
+    if ($AgentMode -and $block.ContainsKey("$AgentMode.$Mode")) { $line = $block["$AgentMode.$Mode"] }
+    elseif ($AgentMode -and $Mode -eq 'resume_all' -and $block.ContainsKey("$AgentMode.resume")) { $line = $block["$AgentMode.resume"] }
+    elseif ($block.ContainsKey($Mode)) { $line = $block[$Mode] }
     elseif ($Mode -eq 'resume_all' -and $block.ContainsKey('resume')) { $line = $block['resume'] }
     elseif ($Mode -eq 'new') { $line = "$Agent {args}" }
     if ($null -eq $line -or $line.Trim() -eq '') { return $null }
-    $argsValue = ''
-    if ($block.ContainsKey('args')) { $argsValue = $block['args'] }
+    $argsValue = Get-BlockValue $Config $Agent $AgentMode 'args'
+    if ($null -eq $argsValue) { $argsValue = '' }
     if ($argsValue -eq '') {
         $line = $line -replace '\s*\{args\}', ''
     } else {
@@ -226,10 +323,10 @@ function Get-ProjectList([string]$Root) {
 # on. `session_list: claude` reads Claude Code's on-disk session store; `off` (or any
 # other value) keeps the agent's own resume command. With no key, a block named `claude`
 # gets `claude` and every other block gets `off`, so existing configs need no change.
-function Get-SessionListKind($Config, [string]$Agent) {
+function Get-SessionListKind($Config, [string]$Agent, [string]$AgentMode = '') {
     if ($null -eq $Config -or -not $Config.Blocks.ContainsKey($Agent)) { return '' }
-    $block = $Config.Blocks[$Agent]
-    if ($block.ContainsKey('session_list')) { $kind = $block['session_list'].Trim() }
+    $v = Get-BlockValue $Config $Agent $AgentMode 'session_list'
+    if ($null -ne $v) { $kind = $v.Trim() }
     elseif ($Agent -eq 'claude') { $kind = 'claude' }
     else { $kind = 'off' }
     if ($kind -eq 'claude') { return 'claude' }
@@ -242,6 +339,14 @@ function Get-SessionListKind($Config, [string]$Agent) {
 function Get-ClaudeProjectsDir {
     if ($env:CLAUDE_CONFIG_DIR) { return (Join-Path $env:CLAUDE_CONFIG_DIR 'projects') }
     return (Join-Path $HOME '.claude\projects')
+}
+
+# The session store one agent and mode read: its `sessions` value (a path; quotes
+# removed, ~ expanded) when set, else Claude Code's default store above.
+function Get-SessionsDir($Config, [string]$Agent, [string]$AgentMode = '') {
+    $v = Get-BlockValue $Config $Agent $AgentMode 'sessions'
+    if ($null -ne $v -and $v.Trim() -ne '') { return (ConvertTo-ConfigPath $v) }
+    return (Get-ClaudeProjectsDir)
 }
 
 # A JSON string body (the text between the quotes) decoded: \" \\ \/ kept as the
@@ -413,9 +518,10 @@ function Format-SessionFolder([string]$Cwd, [string]$Root) {
     return $Cwd
 }
 
-# The line that reopens one chat: the agent's `resume` line with the session id appended.
-function Get-SessionResumeCommand($Config, [string]$Agent, [string]$SessionId) {
-    $line = Get-AgentCommand $Config $Agent 'resume'
+# The line that reopens one chat: the agent's `resume` line (the mode's, with a mode)
+# with the session id appended.
+function Get-SessionResumeCommand($Config, [string]$Agent, [string]$SessionId, [string]$AgentMode = '') {
+    $line = Get-AgentCommand $Config $Agent 'resume' $AgentMode
     if ($null -eq $line) { return $null }
     return "$line $SessionId"
 }

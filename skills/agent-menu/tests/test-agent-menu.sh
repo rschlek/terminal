@@ -212,6 +212,57 @@ cp "$work/agents.base" "$AGENT_MENU_DIR/agents.yaml"
 mkdir -p "$work/claude-empty/projects"
 check session-list-empty-falls-back "cd -- '$HOME' && claude --fixture-flag --resume" "$(CLAUDE_CONFIG_DIR="$work/claude-empty" session claude "$DOWN$DOWN$ENTER")"
 check session-list-missing-store-falls-back "cd -- '$HOME' && claude --fixture-flag --resume" "$(CLAUDE_CONFIG_DIR="$work/no-claude" session claude "$DOWN$DOWN$ENTER")"
+
+# --- 4c. Modes. No mode lines: no modes, --modes prints nothing, lines unchanged, no mode row.
+check modes-none "||" "$(agent_modes claude)|$(selected_mode claude)|$(bash "$scripts/agent-menu.sh" --modes claude)"
+check modes-none-print "claude --fixture-flag --resume" "$(bash "$scripts/agent-menu.sh" --print claude resume)"
+session claude "$ESC" > /dev/null
+check modes-none-no-row "no" "$(grep -qF ' mode  ' "$work/screen" && echo yes || echo no)"
+# A block with modes: the first uses the block's lines; the second overrides new, resume,
+# new_project and sessions; its lines get args only where they say {args}.
+alt="alt.example/v1"; alt_store="$work/claude-alt/projects"
+{
+  cat "$work/agents.base"
+  echo "mc:"; echo "  args: --fixture-flag"; echo "  new: mc {args}"; echo "  resume: mc {args} --resume"
+  echo '  new_project: mc {args} "Create."'; echo "  session_list: claude"
+  echo "  mode: First"; echo "  mode: $alt"; echo "  mode: First"
+  echo "  $alt.new: alt-launch"; echo "  $alt.resume: alt-launch --resume"
+  echo "  $alt.new_project: alt-launch {args} \"Create.\""; echo "  $alt.sessions: \"$alt_store\""
+} > "$AGENT_MENU_DIR/agents.yaml"
+check modes-parsed-in-order "First|$alt" "$(agent_modes mc | paste -sd'|')"
+check modes-key-with-slash-and-dots "\"$alt_store\"" "$(cfg_get mc "$alt.sessions")"
+check modes-first-uses-block "mc --fixture-flag|mc --fixture-flag --resume" "$(agent_command mc new First)|$(agent_command mc resume First)"
+check modes-override-new "alt-launch" "$(agent_command mc new "$alt")"
+check modes-override-resume "alt-launch --resume" "$(agent_command mc resume "$alt")"
+check modes-resume-all-follows-mode "alt-launch --resume" "$(agent_command mc resume_all "$alt")"
+check modes-override-new-project-args 'alt-launch --fixture-flag "Create."' "$(agent_command mc new_project "$alt")"
+check modes-sessions-dir "$alt_store|$(claude_projects_dir)" "$(sessions_dir mc "$alt")|$(sessions_dir mc First)"
+check modes-next-wraps "$alt|First|First" "$(next_mode mc First)|$(next_mode mc "$alt")|$(next_mode mc gone)"
+check modes-memory-default-first "First" "$(selected_mode mc)"
+save_mode mc "$alt"; save_mode other x; save_mode mc "$alt"
+check modes-memory-saved "$alt" "$(selected_mode mc)"
+check modes-memory-one-line-per-agent "2|mc	$alt" "$(wc -l < "$(mode_file)" | tr -d ' ')|$(head -1 "$(mode_file)")"
+check modes-menu-print-remembered "alt-launch" "$(bash "$scripts/agent-menu.sh" --print mc new)"
+check modes-menu-print-mode-param "mc --fixture-flag" "$(bash "$scripts/agent-menu.sh" --mode first --print mc new)"
+check modes-menu-mode-param-not-saved "$alt" "$(selected_mode mc)"
+check modes-menu-unknown-mode "1|agent-menu: the 'mc' block has no mode 'nope' (modes: First, $alt)" "$(e="$(bash "$scripts/agent-menu.sh" --mode nope --print mc new 2>&1 >/dev/null)"; echo "$?|$e")"
+check modes-menu-modes "First		$(claude_projects_dir)|$alt	*	$alt_store" "$(bash "$scripts/agent-menu.sh" --modes mc | paste -sd'|')"
+mkdir -p "$alt_store/f-alt"; uline "$root/gamma" '"alt prompt"' > "$alt_store/f-alt/s-alt.jsonl"; echo >> "$alt_store/f-alt/s-alt.jsonl"
+check modes-sessions-from-mode-store "s-alt	$root/gamma		alt prompt" "$(bash "$scripts/agent-menu.sh" --sessions mc)"
+check modes-sessions-default-store "7|s-ai" "$(bash "$scripts/agent-menu.sh" --mode First --sessions mc | wc -l | tr -d ' ')|$(bash "$scripts/agent-menu.sh" --mode First --sessions mc | head -1 | cut -f1)"
+check modes-list-pinned-row-follows-mode "+ new project" "$(bash "$scripts/agent-menu.sh" --list mc | head -1 | cut -f1)"
+# Scripted sessions: the remembered mode's lines, M on the home screen cycles and is
+# remembered, Shift+M in the session list switches stores, lower-case m filters there.
+check modes-session-new-remembered "cd -- '$HOME' && alt-launch" "$(session mc "$ENTER")"
+check modes-session-row-drawn "yes" "$(grep -qF "[$alt]" "$work/screen" && grep -qF 'M mode' "$work/screen" && echo yes || echo no)"
+check modes-session-m-cycles "cd -- '$HOME' && mc --fixture-flag" "$(session mc "m$ENTER")"
+check modes-session-m-saved "First" "$(selected_mode mc)"
+check modes-session-resume-default-store "cd -- '$root/alpha' && mc --fixture-flag --resume s-ai" "$(session mc "$DOWN$DOWN$ENTER$ENTER")"
+check modes-session-shift-m-switches-store "cd -- '$root/gamma' && alt-launch --resume s-alt" "$(session mc "$DOWN$DOWN${ENTER}M$ENTER")"
+check modes-session-shift-m-saved "$alt" "$(selected_mode mc)"
+check modes-session-project-shift-m "cd -- '$(list_projects "$root" | head -1 | cut -f2)' && mc --fixture-flag --resume" "$(session mc "$DOWN${ENTER}M$TAB$ENTER")"
+check modes-session-lower-m-filters "cd -- '$root/gamma' && mc --fixture-flag" "$(session mc "$DOWN${ENTER}gamm$ENTER")"
+cp "$work/agents.base" "$AGENT_MENU_DIR/agents.yaml"; rm -f "$(mode_file)"
 unset CLAUDE_CONFIG_DIR AGENT_MENU_TEMP_DIR
 
 # --- 5. Setup, against temp folders only.

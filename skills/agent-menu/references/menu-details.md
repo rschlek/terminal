@@ -27,6 +27,8 @@ In that folder:
   then stops refreshing itself until setup runs again.
 - `recent.tsv` - projects opened through the menu, newest first, one
   `<unix-seconds><TAB><path>` line each.
+- `modes.tsv` - the mode last picked for each agent that has modes, one
+  `<agent><TAB><mode>` line each.
 - `backup/` - each standing tab config setup replaced, timestamped.
 
 ## Config format
@@ -66,8 +68,56 @@ Flat on purpose, so both scripts read it line by line with no YAML library:
   below).
 - Block keys: `new` (default `<name> {args}`), `resume`, `resume_all`
   (falls back to `resume`), the optional `new_project` (no default; see the
-  project view), and the optional `session_list` (`claude` or `off`; see the
-  session list). Any block name works as an agent name.
+  project view), the optional `session_list` (`claude` or `off`; see the
+  session list), the optional `sessions` (the session store's projects folder,
+  when it is not the default), and the optional modes below. Any block name
+  works as an agent name.
+- A block key runs to the first colon, so it may hold dots and slashes (the
+  mode-scoped keys below); a value still runs verbatim to the end of the line.
+
+### Modes
+
+One agent's tab can launch the same CLI in more than one way, for example
+against another API backend or with another profile, and keep each one's
+chats apart:
+
+```yaml
+claude:
+  args: --some-flag
+  new: claude {args}
+  resume: claude {args} --resume
+  mode: default
+  mode: example.org/v1
+  example.org/v1.new: other-launcher
+  example.org/v1.resume: other-launcher --resume
+  example.org/v1.sessions: ~/.other-profile/projects
+```
+
+- Each `mode: <name>` line adds a mode, in the order the menu cycles them.
+  The first is the default. A mode name may hold any character but a colon.
+- `<name>.<key>: value` replaces `<key>` in that mode, for `new`, `resume`,
+  `resume_all`, `new_project`, `args`, `sessions` and `session_list`. A key a
+  mode leaves out comes from the block (a mode's `resume_all` falls back to the
+  mode's own `resume` first). `{args}` in a mode's line is the mode's `args`
+  when set, else the block's; a line without `{args}` gets no flags, so a mode
+  that runs another launcher does not inherit the block's flags.
+- `sessions` is the projects folder of the Claude Code store that mode's
+  Resume lists and reopens from (another `CLAUDE_CONFIG_DIR` keeps its chats
+  under its own `projects` folder); quotes are removed and a leading `~`
+  expands.
+- The menu shows a mode line at the top of every screen, the selected mode in
+  brackets (PowerShell colours the first mode cyan and any other magenta).
+  **M** on the home screen and **Shift+M** in the project view and the
+  session list (where a lower-case m is filter text) select the next mode;
+  the footer lists the key. Picking a folder to reopen a chat in keeps the
+  mode the chat was listed in. Switching in the session list reloads it from
+  the new mode's store.
+- The last mode picked is remembered per agent in `modes.tsv` and the menu
+  starts in it; a remembered mode that is no longer listed falls back to the
+  first.
+- A block with no `mode:` lines has no modes: no mode line, no key, and every
+  line as before. The new-warp-chat launcher ignores modes and launches the
+  block's own lines.
 
 The new-warp-chat launcher reads the same file: a block's `new` line (or
 `resume` line for a resume) is how a new tab of that CLI is launched. It
@@ -177,10 +227,15 @@ the pinned row comes first), `agent-menu.ps1 <agent> -Entries` (the home
 screen's entries in order, `<key><TAB><folder>`; the `resume` row's folder is
 where Resume opens), `agent-menu.ps1 <agent> -Sessions` (the session list,
 `<id><TAB><folder><TAB><branch><TAB><title>`, empty when the list is off),
+`agent-menu.ps1 <agent> -Modes` (the agent's modes in order,
+`<mode><TAB><* when remembered, else empty><TAB><session store>`),
 `agent-menu.ps1 <agent> -NoLaunch` (runs the menu, prints instead of
-launching); `agent-menu.sh --print <agent> <mode>`,
+launching); `agent-menu.sh --print <agent> <kind>`,
 `agent-menu.sh --list [<agent>]`, `agent-menu.sh --entries`,
-`agent-menu.sh --sessions <agent>`.
+`agent-menu.sh --sessions <agent>`, `agent-menu.sh --modes <agent>`. With
+modes, `-Print`, `-Sessions`, `-List` and the menu use the remembered mode;
+`-Mode <name>` (`agent-menu.sh --mode <name> ...`, first) uses another one
+without saving it.
 
 ## Tab configs
 
@@ -217,6 +272,9 @@ by setup, which can carry those flags into the new config's `args`.
 reader (including a quoted `--config` value round-tripping verbatim and
 `{args}` substitution), `project.yaml` fields, listing and sort order, the
 recent file, the home screen's entries and Resume's folder with and without `start_in`, the menu's non-interactive modes, and setup against temp folders.
+Modes are covered too: a block without modes unchanged, mode parsing (names
+with dots and slashes, duplicates), each mode's new / resume / new_project
+lines and args, the per-mode session store, the remembered mode, and `-Mode`.
 Both also build a fake session store in a temp `CLAUDE_CONFIG_DIR` (titles
 present, missing and duplicated, string and array messages, several folders
 in one file, a partial last line, long titles, temp-folder, no-user and
